@@ -1,0 +1,25 @@
+# --- Web / API ---
+fastapi>=0.110,<1.0           # ASGI framework + auto Swagger at /docs
+uvicorn[standard]>=0.27,<1.0  # ASGI server; the [standard] extra pulls the
+                              # websockets impl used by the /ws live-progress feed
+python-multipart>=0.0.9       # form parsing for the Oxidized-compat POST routes
+pydantic>=2.0,<3.0            # request/response models (FastAPI 0.100+ needs v2)
+
+# --- SSH collection ---
+paramiko>=3.4,<5.0            # SSH client. The <5.0 ceiling is deliberate:
+                              # LegacySSHSupport registers handlers into
+                              # Transport._kex_info / Transport._key_info, internals
+                              # a 5.0 major could restructure. Stay on the 3.x/4.x line.
+# ldap
+ldap3>=2.9.0
+
+# --- Storage ---
+GitPython>=3.1,<4.0          # git storage backend (file backend needs nothing extra)
+
+# --- Parsing ---
+textfsm>=1.1,<3.0            # TextFSM engine behind tfsm-fire
+click>=8.0,<9.0             # tfsm-fire verbose CLI output (imported in parser/tfsm_fire.py)
+
+# --- Config / crypto ---
+PyYAML>=6.0,<7.0            # ~/.netlapse/config.yaml
+cryptography>=42.0          # vault encryption (Fernet/PBKDF2); also required by paramiko

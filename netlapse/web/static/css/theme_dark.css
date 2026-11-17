@@ -1,0 +1,69 @@
+/* ══════════════════════════════════════════════════════════════
+   Netlapse — Dark theme (color tokens)
+   ──────────────────────────────────────────────────────────────
+   Same token names as theme-light.css, dark values. The dark
+   content surfaces are tuned to harmonize with the sidebar, which
+   was already dark — so dark mode inverts the content to meet the
+   rail rather than reinventing the look.
+
+   Depth ladder (darkest → lightest):
+     --bg  <  --sidebar-bg  <  --surface  <  --surface-alt
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Surface */
+    --bg:          #0e141d;
+    --surface:     #1a2331;
+    --surface-alt: #222d3d;
+    --border:      #2c3a4c;
+    --border-light:#212c3b;
+    --border-strong:#3a4a5e;
+    --hairline:    #1f2937;
+    --code-bg:     #222d3d;
+    --row-hover:   #212d40;
+
+    /* Sidebar (rail sits just below card surfaces) */
+    --sidebar-bg:       #141b26;
+    --sidebar-text:     #8095a9;
+    --sidebar-text-hi:  #bdd4f5;
+    --sidebar-active:   rgba(59, 130, 246, 0.22);
+    --sidebar-muted:    #5b6f84;
+
+    /* Text */
+    --text:        #e6edf4;
+    --text-2:      #c5d0db;
+    --text-muted:  #93a1b3;
+    --text-faint:  #6f7e91;
+    --text-ghost:  #44515f;
+
+    /* Brand (brighter for contrast on dark) */
+    --blue:        #5b9bf8;
+    --blue-light:  #213a5c;
+    --blue-bg:     #16263d;
+    --blue-hover:  #79b0ff;
+
+    /* Status — brighter fg, deep desaturated bg tints */
+    --green:       #41c66f;
+    --green-bg:    #11271a;
+    --green-border:#1f5234;
+    --green-text:  #74e3a0;
+    --red:         #f26a61;
+    --red-bg:      #2b1414;
+    --red-border:  #5a2626;
+    --red-text:    #ff9d96;
+    --red-hover:   #d84a40;
+    --orange:      #f0883f;
+    --orange-bg:   #2a1c0d;
+    --orange-border:#5c3a16;
+    --orange-text: #f0b46a;
+    --purple:      #a47bf0;
+    --purple-bg:   #241a3a;
+
+    /* Highlight (config search marks / focused lines) */
+    --mark-bg:     #e3c04a;
+    --mark-text:   #2a1d05;
+    --hl-focus-bg: #2e2a14;
+
+    /* Overlay */
+    --overlay:     rgba(0, 0, 0, 0.62);
+}

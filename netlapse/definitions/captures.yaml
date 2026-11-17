@@ -1,0 +1,84 @@
+# captures.yaml — what to collect (vendor-neutral intent + per-platform syntax)
+#
+# This is the authoritative catalog of collectable artifacts. Edit this file
+# and restart netlapse to add, change, or remove a capture. No code change.
+#
+# Each capture:
+#   capture_type : coarse grouping tag (config/bgp/arp/...). NOT unique; it is
+#                  also the on-disk filename until storage is artifact-keyed,
+#                  so keep a capture to a single command per platform for now.
+#   command      : a string/list (applies to all platforms) OR a map keyed by
+#                  platform slug. The reserved key 'default' is the fallback
+#                  for any platform without an explicit override. Platform keys
+#                  must match a platform slug in the DCIM platform table
+#                  (dcim_platform) — that is what devices reference and what
+#                  decides whether an override fires. `definitions validate`
+#                  warns about keys that match no known platform.
+#   parse        : optional TextFSM template-name pin (advisory).
+#   interval     : collection cadence in seconds (a property of the capture —
+#                  to run the same command at a different cadence somewhere,
+#                  define a second capture and bind it in jobs.yaml).
+version: 1
+
+captures:
+  config-backup:
+    capture_type: config
+    description: Running configuration
+    command:
+      default: show running-config
+      juniper_junos: show configuration | display set
+    interval: 3600
+
+  arp-table:
+    capture_type: arp
+    description: ARP table
+    command:
+      default: show ip arp
+      juniper_junos: show arp no-resolve
+      arista_eos: show arp
+    interval: 1800
+
+  bgp-summary:
+    capture_type: bgp
+    description: BGP session state
+    command:
+      default: show ip bgp summary
+      juniper_junos: show bgp summary
+    interval: 900
+
+  interface-status:
+    capture_type: interfaces
+    description: Interface status
+    command: show interfaces
+    interval: 1800
+
+  route-table:
+    capture_type: routes
+    description: Route table
+    command:
+      default: show ip route
+      juniper_junos: show route
+    interval: 1800
+
+  ospf-neighbors:
+    capture_type: ospf
+    description: OSPF neighbors
+    command:
+      default: show ip ospf neighbor
+      juniper_junos: show ospf neighbor
+      nokia_sros: show router ospf neighbor
+    interval: 1800
+
+  mac-table:
+    capture_type: mac
+    description: MAC address table
+    command:
+      default: show mac address-table
+      juniper_junos: show ethernet-switching table
+    interval: 1800
+
+  lldp-neighbors:
+    capture_type: lldp
+    description: LLDP neighbors detail
+    command: show lldp neighbors detail
+    interval: 1800

@@ -1,0 +1,58 @@
+# jobs.yaml — deployment bindings: which capture runs where
+#
+# A binding selects a capture (by its slug in captures.yaml) and the device
+# set it runs against. It carries NO command syntax and NO interval — those
+# come from the referenced capture. `enabled` here is only the seed value used
+# the first time the job is inserted; after that the live on/off toggle is
+# owned by the DB (and the UI), and a sync will never override it.
+#
+# filters (all optional; omit or null = all devices):
+#   site / role / platform : slug or comma-separated list
+#   device                 : device-name pattern (SQL LIKE)
+#   status                 : device status filter (default: active)
+#
+# Removing a binding here tombstones the job on next restart: it is disabled
+# and stops collecting, but its row and history are kept. Re-adding it does not
+# auto-re-enable it — toggle it back on in the UI.
+version: 1
+
+jobs:
+  config-backup:
+    capture: config-backup
+    name: Config backup
+    enabled: true
+
+  arp-table:
+    capture: arp-table
+    name: ARP table
+    enabled: true
+
+  bgp-summary:
+    capture: bgp-summary
+    name: BGP summary
+    enabled: true
+
+  interface-status:
+    capture: interface-status
+    name: Interface status
+    enabled: true
+
+  route-table:
+    capture: route-table
+    name: Route table
+    enabled: true
+
+  ospf-neighbors:
+    capture: ospf-neighbors
+    name: OSPF neighbors
+    enabled: true
+
+  mac-table:
+    capture: mac-table
+    name: MAC address table
+    enabled: true
+
+  lldp-neighbors:
+    capture: lldp-neighbors
+    name: LLDP neighbors detail
+    enabled: true

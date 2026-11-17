@@ -1,0 +1,65 @@
+# roles.yaml — how netlapse guesses a device's role from its hostname.
+#
+# Role inference runs once, at map-import time (`netlapse sync-map`), turning a
+# hostname into a device-role slug (router/leaf/spine/core/firewall/...). The
+# slug must resolve to a row in the DCIM device-role table (dcim_device_role);
+# any role named here that doesn't exist yet is auto-created on import.
+#
+# This file is OPTIONAL. With no roles.yaml present, netlapse uses its built-in
+# naming-convention defaults (datacenter/SP prefixes + campus segments). Drop a
+# roles.yaml in the definitions directory (next to captures.yaml / jobs.yaml),
+# or point at one with `--roles PATH`, to encode YOUR naming standard instead.
+# Edit and re-run sync-map — no code change.
+#
+# ── Matching model ─────────────────────────────────────────────────────────
+# Two ordered strategies, tried in sequence. First match wins.
+#   prefix  : hostname STARTS WITH the match string.   "border01"   → router
+#   segment : match string appears ANYWHERE.           "site1-core-1" → core
+# Prefix rules are tried before segment rules. If nothing matches, `fallback`
+# is used. Put the most specific rules first within each list.
+#
+# Each rule is one of:
+#   - {match: "border", role: router}        # explicit form
+#   - tor: leaf                              # shorthand (single key: value)
+#
+# ── How your rules combine with the built-ins ───────────────────────────────
+#   extend_builtins: false  (default) → YOUR rules are the whole ruleset; the
+#                                       built-ins are not consulted at all.
+#   extend_builtins: true             → your rules run FIRST (so they win on a
+#                                       conflict), then the built-ins run as a
+#                                       fallback layer for anything you didn't
+#                                       cover.
+#
+# Tip: keep `match` strings at least 2 chars. A bare "-" (or any 1-char match)
+# in `segment` will hit almost every hostname and shadow every rule after it —
+# sync-map will warn you if it sees one.
+
+version: 1
+
+role_inference:
+  extend_builtins: false
+  fallback: switch
+
+  # Hostname STARTS WITH — datacenter / service-provider convention.
+  prefix:
+    - {match: "border", role: router}        # border routers
+    - {match: "edge",   role: router}        # edge routers
+    - {match: "peer",   role: router}        # peering routers
+    - {match: "spine",  role: spine}         # spine switches
+    - {match: "leaf",   role: leaf}          # leaf switches
+    - {match: "tor",    role: leaf}          # top-of-rack switches
+    - {match: "agg",    role: distribution}  # aggregation switches
+    - {match: "core",   role: core}          # core routers/switches
+    - {match: "oob",    role: access}        # OOB management switches
+
+  # Match ANYWHERE in the hostname — campus / enterprise convention.
+  segment:
+    - {match: "-core-",  role: core}
+    - {match: "-rtr-",   role: router}
+    - {match: "-wan-",   role: router}
+    - {match: "-fw-",    role: firewall}
+    - {match: "-sw-",    role: access}
+    - {match: "-dist-",  role: distribution}
+    - {match: "-agg-",   role: distribution}
+    - {match: "-spine-", role: spine}
+    - {match: "-leaf-",  role: leaf}

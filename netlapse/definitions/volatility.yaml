@@ -1,0 +1,84 @@
+# volatility.yaml — which parsed fields (and raw config lines) are "noise" for
+# the semantic diff.
+#
+# This is diff-time policy, not collection. It decides two things:
+#   - which record COLUMNS a fresh semantic diff EXCLUDES by default — the
+#     age/uptime timers and counters that change every poll; and
+#   - which raw config LINES to mask on the text diff (see `line_masks` below) —
+#     the analogue for captures that have no parsed records, e.g. the IOS
+#     `ntp clock-period` the router auto-tunes on its own.
+#
+# Both have a code baseline that is always applied and can't be dropped here;
+# this file only ADDS to it. Edit and restart netlapse — no code change. (Unlike
+# captures.yaml / jobs.yaml this is held in memory and never synced to the DB;
+# it is read only while computing a diff.) The per-diff UI chips still override
+# whatever the field side resolves.
+#
+# Field resolution for a given capture type and the columns present:
+#   (heuristic glob matches on the columns)
+#     ∪ (explicit `volatile` for the type)
+#     − (explicit `keep` for the type)
+#     − key fields            (a record's identity is never excludable)
+#   ∩ the columns that actually exist
+#
+# Field matching is case-insensitive; heuristics are globs (* and ?), explicit
+# `volatile`/`keep` are exact column names. Line masks are REGEXES (case-
+# sensitive) matched against raw config lines — global first, then per-capture.
+#
+# Missing file → baseline only. Invalid file (incl. an uncompilable line-mask
+# regex) → logged and treated as empty, so a typo here never blocks diffing.
+version: 1
+
+# Global name heuristics — matched against every column of every capture type
+# and platform. The zero-curation baseline: a new template's obvious timers and
+# counters classify themselves the first time they're collected, no per-template
+# entry required. Keep these broad but defensible; rescue false hits with `keep`.
+heuristics:
+  - AGE
+  - "AGE_*"        # AGE_SEC, AGE_MIN
+  - UPTIME
+  - "*_TIME"       # LAST_TIME, HOLD_TIME, DEAD_TIME, ...
+  - "LAST_*"       # LAST_SEEN, LAST_MOVE, LAST_FLAP, ...
+  - DURATION
+  - "IDLE*"
+  - ELAPSED
+  - "*_PACKETS"    # interface/counter churn
+  - "*_BYTES"
+  - "*_RATE"
+  - "*_ERRORS"
+  - "*_DROPS"
+  - "*_COUNTER"
+
+# Global config-LINE masks — regexes matched against raw config lines on the
+# text diff, blanking any line whose value the device rewrites on its own so it
+# doesn't read as drift. The shipped baseline already covers the common cases
+# across IOS / Junos / EOS (Last configuration change, ntp clock-period, commit
+# timestamps, ...); anything here is UNIONED on top. Add your platform's own
+# auto-generated lines here — no code change needed.
+line_masks: []
+  # Examples (uncomment / adjust):
+  # - "^Building configuration"          # IOS "Building configuration..." banner
+  # - "logging buffered \\d+"            # if buffer size churns in your fleet
+
+# Explicit per-capture-type rules, authoritative on top of heuristics.
+#   volatile:   exclude these columns by default (in addition to heuristic hits)
+#   keep:       never exclude these, even if a heuristic would match them
+#   line_masks: regexes to mask on this capture's text diff (raw/config types)
+# Populate per your own templates' column names — the field-exclusion chips in
+# the UI expose every column regardless, so this only controls what is
+# PRE-excluded when a diff first opens.
+captures:
+  arp:
+    volatile: [AGE]
+  mac:
+    volatile: [AGE]
+  # Examples — uncomment and adjust to your templates' actual column names:
+  # bgp:
+  #   volatile: [UP_DOWN]      # session uptime ticks every poll
+  #   keep:     [STATE, STATE_PFXRCD]   # state/prefixes-received are real signal
+  # ospf:
+  #   volatile: [DEAD_TIME]
+  # interfaces:
+  #   keep:     [LINK_STATUS]  # a *_STATUS that no heuristic hits, kept explicit
+  # config:
+  #   line_masks: ["snmp-server location .*"]   # per-capture line mask example

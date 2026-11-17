@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netlapse2"
+description = "Network state time-lapse — periodic structured snapshots of device operational state with versioned diffs (an Oxidized replacement)."
+readme = "netlapse/README.md"
+requires-python = ">=3.10"
+license = { text = "GPLv3" }
+authors = [{ name = "Scott Peterman" }]
+keywords = ["network", "automation", "oxidized", "netops", "observability", "textfsm"]
+dynamic = ["version"]
+
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.7",
+    "pydantic>=2.0",
+    "PyYAML>=6.0",
+    "paramiko>=3.0,<4.0.0",
+    "cryptography>=42.0",
+    "textfsm>=1.1",
+    "ldap3>=2.9",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+# Test/dev tooling. `pip install netlapse[dev]`
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.urls]
+Homepage = "https://github.com/scottpeterman/netlapse"
+Documentation = "https://github.com/scottpeterman/netlapse/blob/main/netlapse/README.md"
+
+[project.scripts]
+netlapse = "netlapse.__main__:main"
+
+# ── packaging ────────────────────────────────────────────────────────────────
+[tool.setuptools.dynamic]
+version = { attr = "netlapse.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["netlapse*"]
+
+# Non-Python files that must ship inside the wheel. The SPA (HTML/CSS/JS) and the
+# default definition catalog are runtime-required; without these the web UI 404s
+# and the registry has nothing to sync.
+[tool.setuptools.package-data]
+"netlapse" = ["definitions/*.yaml", "definitions/*.yml"]
+"netlapse.web" = ["static/*", "static/**/*"]
+
+# Keep macOS cruft out of the distribution.
+[tool.setuptools.exclude-package-data]
+"*" = [".DS_Store", "**/.DS_Store"]

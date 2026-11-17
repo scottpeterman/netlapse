@@ -1,0 +1,348 @@
+/* ══════════════════════════════════════════════════════════════
+   Admin Views
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Nav separator ── */
+.nav-separator {
+    padding: 14px 14px 6px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sidebar-muted);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 6px;
+}
+
+/* ── Admin two-column grid ── */
+.admin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 960px) {
+    .admin-grid { grid-template-columns: 1fr; }
+}
+.admin-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── Component status rows (Settings view) ── */
+.comp-section {
+    margin-bottom: 14px;
+}
+.comp-section:last-child { margin-bottom: 0; }
+.comp-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-light);
+}
+.comp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12px;
+}
+.comp-label {
+    min-width: 90px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+.comp-detail {
+    color: var(--text);
+    font-size: 11.5px;
+}
+.comp-detail code {
+    font-size: 10.5px;
+}
+
+/* ── Data directory table ── */
+.dir-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.dir-table td {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-light);
+}
+.dir-table tr:last-child td { border-bottom: none; }
+.dir-icon { width: 24px; text-align: center; }
+.text-right { text-align: right; }
+
+/* ── Config YAML editor ── */
+.config-editor {
+    width: 100%;
+    min-height: 400px;
+    padding: 14px 16px;
+    border: none;
+    border-top: 1px solid var(--border-light);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--surface-alt);
+    resize: vertical;
+    outline: none;
+    tab-size: 2;
+}
+.config-editor:focus {
+    background: var(--surface);
+}
+
+/* ── Template Lab ── */
+.lab-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 1200px) {
+    .lab-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.lab-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+}
+.lab-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-alt);
+}
+.lab-panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+}
+.lab-input {
+    width: 100%;
+    min-height: 200px;
+    padding: 10px 14px;
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--surface);
+    resize: vertical;
+    outline: none;
+}
+.lab-controls {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border-light);
+    background: var(--surface-alt);
+}
+.lab-result-body {
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 12px 14px;
+}
+.lab-parsed-body {
+    max-height: 420px;
+    overflow: auto;
+}
+
+/* Match result cards */
+.lab-match {
+    padding: 10px 12px;
+    border-radius: var(--r);
+    margin-bottom: 8px;
+}
+.lab-match-success {
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+}
+.lab-match-fallback {
+    background: var(--orange-bg);
+    border: 1px solid var(--orange-border);
+}
+.lab-match-fail {
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+}
+.lab-match-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+}
+.lab-match-meta {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* Candidate list */
+.lab-candidates {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 6px;
+}
+.lab-candidate {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+.lab-candidate:hover { background: var(--surface-alt); }
+.lab-candidate-winner {
+    background: rgba(22,163,74,0.06);
+}
+
+/* ── Utility additions ── */
+.fs-11 { font-size: 11px; }
+
+/* ── Template Lab: author/test workbench ── */
+.lab-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.lab-check {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.lab-author {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 1100px) {
+    .lab-author { grid-template-columns: 1fr; }
+}
+.lab-edit-col, .lab-result-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.lab-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Score breakdown bars */
+.lab-score-bars {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.lab-bar-row {
+    display: grid;
+    grid-template-columns: 84px 1fr 56px;
+    gap: 8px;
+    align-items: center;
+}
+.lab-bar-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: capitalize;
+}
+.lab-bar {
+    height: 7px;
+    border-radius: 4px;
+    background: var(--surface-alt);
+    overflow: hidden;
+}
+.lab-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--blue);
+}
+.lab-bar-val {
+    font-size: 11px;
+    text-align: right;
+    color: var(--text-2);
+}
+
+/* State-error detail grid */
+.lab-err-grid {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11.5px;
+}
+
+/* ── Template Lab: textarea polish ── */
+.lab-input {
+    width: 100%;
+    box-sizing: border-box;
+    tab-size: 2;
+}
+.lab-input::placeholder {
+    color: var(--text-faint);
+    opacity: 0.7;
+}
+.lab-panel:focus-within {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-bg);
+}
+.lab-panel:focus-within .lab-panel-head {
+    color: var(--blue);
+}
+/* The TextFSM editor is the workhorse — give it room and a comfortable read */
+#lab-tpl {
+    min-height: 340px;
+    line-height: 1.55;
+    font-size: 12px;
+}
+#lab-raw {
+    min-height: 150px;
+    line-height: 1.5;
+}
+/* Result/parsed panels track the editor height so the two columns align */
+.lab-result-body, .lab-parsed-body {
+    max-height: none;
+}
+.lab-result-col .lab-panel:first-child .lab-result-body {
+    min-height: 120px;
+}
+/* ── Reference Data view ── */
+.ref-tabs {
+    display: flex;
+    gap: 6px;
+}
+.ref-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.ref-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid var(--border);
+}

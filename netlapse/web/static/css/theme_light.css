@@ -1,0 +1,67 @@
+/* ══════════════════════════════════════════════════════════════
+   Netlapse — Light theme (color tokens)
+   ──────────────────────────────────────────────────────────────
+   This file defines ONLY color tokens. Theme-invariant tokens
+   (font, radius) live in netlapse.css's :root. The server links
+   exactly one theme file per request, chosen from the logged-in
+   user's saved preference, so swapping themes is a value swap —
+   every rule already reads these via var().
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Surface */
+    --bg:          #f4f5f7;
+    --surface:     #ffffff;
+    --surface-alt: #f8f9fb;
+    --border:      #e2e5e9;
+    --border-light:#eef0f2;
+    --border-strong:#ccd0d5;
+    --hairline:    #f7f8f9;
+    --code-bg:     #f1f3f5;
+    --row-hover:   #f8faff;
+
+    /* Sidebar */
+    --sidebar-bg:       #1a2332;
+    --sidebar-text:     #7b96ab;
+    --sidebar-text-hi:  #93c5fd;
+    --sidebar-active:   rgba(37, 99, 235, 0.14);
+    --sidebar-muted:    #4a6a85;
+
+    /* Text */
+    --text:        #1a2332;
+    --text-2:      #3d4852;
+    --text-muted:  #6b7280;
+    --text-faint:  #8b95a2;
+    --text-ghost:  #ccd0d5;
+
+    /* Brand */
+    --blue:        #2563eb;
+    --blue-light:  #dbeafe;
+    --blue-bg:     #eff6ff;
+    --blue-hover:  #1d4ed8;
+
+    /* Status */
+    --green:       #16a34a;
+    --green-bg:    #f0fdf4;
+    --green-border:#bbf7d0;
+    --green-text:  #166534;
+    --red:         #dc2626;
+    --red-bg:      #fef2f2;
+    --red-border:  #fecaca;
+    --red-text:    #991b1b;
+    --red-hover:   #b91c1c;
+    --orange:      #ea580c;
+    --orange-bg:   #fffbeb;
+    --orange-border:#fde68a;
+    --orange-text: #92400e;
+    --purple:      #7c3aed;
+    --purple-bg:   #f3e8ff;
+
+    /* Highlight (config search marks / focused lines) */
+    --mark-bg:     #fde68a;
+    --mark-text:   #78350f;
+    --hl-focus-bg: #fef3c7;
+
+    /* Overlay */
+    --overlay:     rgba(0, 0, 0, 0.45);
+}
