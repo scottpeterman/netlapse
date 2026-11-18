@@ -39,6 +39,7 @@ from netlapse.api.captures import router as captures_router
 from netlapse.api.dcim_admin import router as dcim_admin_router
 from netlapse.api.parse_audit import router as parse_audit_router
 from netlapse.api.changes import router as changes_router
+from netlapse.api.topology import router as topology_router
 from netlapse.auth import (
     AuthManager,
     auth_router,
@@ -529,6 +530,7 @@ app.include_router(captures_router)
 app.include_router(dcim_admin_router)
 app.include_router(parse_audit_router)
 app.include_router(changes_router)
+app.include_router(topology_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

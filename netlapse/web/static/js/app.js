@@ -26,6 +26,7 @@ const views = {
     reference:   () => import('./views/reference.js'),
     audit:       () => import('./views/audit.js'),
     changes:     () => import('./views/changes.js'),
+    topology:    () => import('./views/topology.js'),
     users:       () => import('./views/users.js'),
     setup:       () => import('./views/setup.js'),
 };
@@ -45,6 +46,7 @@ const VIEW_TO_NAV = {
     reference: 'reference',
     audit: 'audit',
     changes: 'changes',
+    topology: 'topology',
     users: 'users',
     setup: 'setup',
 };
@@ -63,6 +65,7 @@ const VIEW_TITLES = {
     reference: 'Reference Data',
     audit: 'Parse Audit',
     changes: 'Changes',
+    topology: 'Topology',
     users: 'Users',
     setup: 'Setup',
 };

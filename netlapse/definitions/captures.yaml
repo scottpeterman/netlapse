@@ -80,5 +80,8 @@ captures:
   lldp-neighbors:
     capture_type: lldp
     description: LLDP neighbors detail
-    command: show lldp neighbors detail
+    command:
+      default: show lldp neighbors detail
+      # The only Junos LLDP template is the brief table (adds PARENT_INTERFACE)
+      juniper_junos: show lldp neighbors
     interval: 1800

@@ -92,6 +92,21 @@ disagree — and the **Dashboard's 48-hour config-change counter** reuses the ex
 same pipeline, so the number on the dashboard always matches what you see when
 you open the feed.
 
+## Topology
+
+A network map built from the LLDP captures netlapse already collects — no
+discovery pass and no extra device sessions. Neighbor claims are joined
+against DCIM (FQDN-to-DCIM-name matching, management-address fallback), and
+every link is tagged by how well its two ends agree: **confirmed**,
+**one-sided** (the far end has LLDP data but doesn't list us back), **unverified**
+(the far end has no LLDP capture), or **unmanaged** (not in DCIM; hidden by
+default). Because the source is versioned storage, the map can be drawn **as of**
+any stored time, and **Compare** shows what moved between two points — links
+added, removed, or changed state — with the LLDP change points offered as
+one-click windows. Rendering is Secure Cartography's viewer, ported to run in
+the browser; `map.json` export opens in SC2. See
+[README_Topology.md](README_Topology.md).
+
 > **⚠️ Beta Version Notice**
 >
 > Netlapse is **beta**. It can run in production, but expect rough edges and breaking changes while the API settles.

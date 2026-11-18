@@ -505,7 +505,7 @@ DEFAULT_JOBS = [
      1800),
     ("LLDP neighbors detail", "lldp-neighbors", "lldp",
      '["show lldp neighbors detail"]',
-     None,
+     '{"juniper_junos": ["show lldp neighbors"]}',
      1800),
 ]
 

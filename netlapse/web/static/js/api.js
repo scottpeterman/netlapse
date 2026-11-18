@@ -151,6 +151,13 @@ export const api = {
     captureTypes: () => request('/search/capture_types'),
 
     // ── Change Feed (two-phase: cheap enumerate, then batched verify) ──
+    // ── Topology (map from stored LLDP) — q is a URLSearchParams ──
+    topology: {
+        map:     (q) => request('/topology?' + q),
+        diff:    (q) => request('/topology/diff?' + q),
+        changes: (q) => request('/topology/changes?' + q),
+    },
+
     changes: {
         candidates: (params = {}) =>
             request('/changes/candidates?' + new URLSearchParams(params)),

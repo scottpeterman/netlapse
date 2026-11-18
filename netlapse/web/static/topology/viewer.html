@@ -1,0 +1,2521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netlapse Topology</title>
+
+    <!-- Cytoscape.js (vendored, offline) -->
+    <script src="vendor/cytoscape.min.js"></script>
+
+    <!-- Dagre layout extension for hierarchical graphs -->
+    <script src="vendor/dagre.min.js"></script>
+    <script src="vendor/cytoscape-dagre.js"></script>
+
+    <!-- fCoSE layout extension (fast compound spring embedder) -->
+    <script src="vendor/layout-base.js"></script>
+    <script src="vendor/cose-base.js"></script>
+    <script src="vendor/cytoscape-fcose.js"></script>
+
+    <!-- Cola layout extension (constraint-based) -->
+    <script src="vendor/cola.min.js"></script>
+    <script src="vendor/cytoscape-cola.js"></script>
+
+
+    <style>
+        :root {
+            --bg-primary: #16181d;
+            --bg-surface: #1c1f26;
+            --text-primary: #e6e8eb;
+            --text-secondary: #aab1bc;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #2563eb;
+            --border-color: #2c313b;
+            --node-border: #3b82f6;
+            --edge-color: #7c8491;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-primary);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+        }
+
+        #cy { width: 100vw; height: 100vh; }
+
+        #info-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 200px;
+            max-width: 300px;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        #info-panel.active { display: block; }
+        #info-panel h4 { color: var(--accent-primary); margin-bottom: 8px; font-size: 14px; }
+        .info-item { color: var(--text-primary); font-size: 12px; margin: 4px 0; }
+        .info-item strong { color: var(--text-secondary); }
+
+        /* --- Device detail modal --- */
+        #device-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        #device-modal.active { display: flex; }
+        #dm-box {
+            position: relative;   /* netlapse: anchors the copy "please wait" overlay */
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            width: min(900px, 92vw);
+            max-height: 86vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+        }
+        #dm-head {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #dm-title { color: var(--accent-primary); font-size: 16px; font-weight: 600; }
+        #dm-sub { color: var(--text-secondary); font-size: 12px; }
+        #dm-close {
+            margin-left: auto;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 20px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+        #dm-close:hover { color: var(--accent-primary); }
+        #dm-tabs {
+            display: flex;
+            gap: 2px;
+            padding: 0 12px;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+        .dm-tab {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            font-size: 12px;
+            padding: 9px 12px;
+            cursor: pointer;
+        }
+        .dm-tab:hover { color: var(--text-primary); }
+        .dm-tab.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); }
+        .dm-tab .dm-count { opacity: 0.6; font-size: 11px; }
+        #dm-body { padding: 14px 16px; overflow: auto; }
+        .dm-pane { display: none; }
+        .dm-pane.active { display: block; }
+        table.dm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table.dm-table th, table.dm-table td {
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            vertical-align: top;
+            word-break: break-word;
+        }
+        /* top: -14px = #dm-body's top padding, so the stuck header covers that band
+           instead of letting scrolled rows show through above it. */
+        table.dm-table th { color: var(--text-secondary); font-weight: 600; position: sticky; top: -14px; background: var(--bg-surface); z-index: 1;
+            /* border-collapse drops a sticky cell's border once it scrolls; the
+               shadow keeps a rule under the stuck header. */
+            box-shadow: inset 0 -1px 0 var(--border-color); }
+        table.dm-table td.dm-key { color: var(--text-secondary); width: 30%; white-space: nowrap; }
+        table.dm-table tr:last-child td { border-bottom: none; }
+        .dm-empty { color: var(--text-secondary); font-size: 12px; font-style: italic; padding: 10px 2px; }
+        .dm-mac-controls { display: flex; gap: 10px; align-items: center; }
+        .dm-mac-controls .dm-filter { flex: 1; }
+        .dm-mac-toggle { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+        .dm-mac-table th { white-space: nowrap; }
+        .dm-mac-table td:nth-child(-n+3), .dm-mac-table td:nth-child(6) {
+            white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+        }
+        .dm-filter {
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 8px;
+            padding: 6px 8px;
+            font-size: 12px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-base, var(--bg-surface));
+            color: var(--text-primary);
+        }
+        .dm-err { color: #e06c6c; font-size: 12px; margin: 3px 0; }
+        .dm-section { color: var(--text-secondary); font-size: 11px; font-weight: 600;
+                      text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 6px; }
+        .dm-pre {
+            margin: 0;
+            padding: 10px 12px;
+            max-height: 60vh;
+            overflow: auto;
+            white-space: pre;
+            font-family: "JetBrains Mono", Consolas, "SF Mono", Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+        .dm-meta { color: var(--text-secondary); font-size: 11px; margin: 6px 2px 0; }
+        /* netlapse: copy / export toolbar on dialog tables and raw text */
+        .nl-tools { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin: 0 0 6px; }
+        .nl-tools button { font-size: 11px; padding: 3px 9px; border-radius: 4px; cursor: pointer;
+                           border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-primary); }
+        .nl-tools button:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+        .nl-wait { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+                   background: rgba(0, 0, 0, 0.18); border-radius: inherit; }
+        .nl-wait div { background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color);
+                       border-radius: 8px; padding: 12px 18px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+        .nl-wait small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 4px; }
+        .nl-tools .nl-note { font-size: 11px; color: var(--text-secondary); margin-right: auto; }
+
+        #stats-bar {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            z-index: 1000;
+        }
+        #stats-bar span { color: var(--accent-primary); font-weight: 600; }
+
+        /* Debug panel */
+        #debug-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.85);
+            border: 1px solid #ff6b6b;
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 300px;
+            max-width: 400px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 2000;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        #debug-panel h4 { color: #ff6b6b; margin-bottom: 8px; }
+        #debug-log { color: #00ff88; }
+        #debug-log .error { color: #ff6b6b; }
+        #debug-log .warn { color: #ffaa00; }
+        #debug-log .info { color: #00d4ff; }
+
+        #loading {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        #loading.hidden { display: none; }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 320px;
+            display: flex;
+            gap: 8px;
+            z-index: 1000;
+        }
+        #controls.hidden { display: none; }
+        .ctrl-btn {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .ctrl-btn:hover { background: var(--accent-primary); color: var(--bg-primary); }
+    </style>
+</head>
+<body>
+    <div id="cy"></div>
+
+    <div id="debug-panel" hidden>
+        <h4>🔍 JS Debug Log</h4>
+        <div id="debug-log"></div>
+    </div>
+
+    <div id="info-panel">
+        <h4>Device Information</h4>
+        <div id="info-content"></div>
+    </div>
+
+    <div id="device-modal">
+        <div id="dm-box">
+            <div id="dm-head">
+                <span id="dm-title"></span>
+                <span id="dm-sub"></span>
+                <button id="dm-close" title="Close (Esc)">&times;</button>
+            </div>
+            <div id="dm-tabs"></div>
+            <div id="dm-body"></div>
+        </div>
+    </div>
+
+    <div id="stats-bar">
+        Nodes: <span id="node-count">0</span> |
+        Edges: <span id="edge-count">0</span>
+    </div>
+
+    <div id="controls" class="hidden">
+        <button class="ctrl-btn" onclick="TopologyViewer.fitView()">Fit View</button>
+        <button class="ctrl-btn" onclick="TopologyViewer.applyLayout('dagre')">Hierarchical</button>
+        <button class="ctrl-btn" onclick="TopologyViewer.applyLayout('cose')">Force Layout</button>
+    </div>
+
+    <div id="loading" class="hidden">
+        <div class="spinner"></div>
+    </div>
+<script>
+/**
+ * Debug logger - writes to both console and debug panel
+ */
+const DebugLog = {
+    panel: null,
+
+    init() {
+        this.panel = document.getElementById('debug-log');
+        this.log('info', 'Debug logger initialized');
+    },
+
+    log(level, msg) {
+        const timestamp = new Date().toISOString().substr(11, 12);
+        const line = `[${timestamp}] ${msg}`;
+
+        if (level === 'error') console.error(line);
+        else if (level === 'warn') console.warn(line);
+        else console.log(line);
+
+        if (this.panel) {
+            const div = document.createElement('div');
+            div.className = level;
+            div.textContent = line;
+            this.panel.appendChild(div);
+            this.panel.scrollTop = this.panel.scrollHeight;
+
+            while (this.panel.children.length > 50) {
+                this.panel.removeChild(this.panel.firstChild);
+            }
+        }
+    },
+
+    info(msg) { this.log('info', msg); },
+    warn(msg) { this.log('warn', msg); },
+    error(msg) { this.log('error', msg); }
+};
+
+/**
+ * TopologyViewer - Portable Cytoscape.js viewer
+ */
+const TopologyViewer = {
+    cy: null,
+    bridge: null,
+    iconBasePath: '',
+    platformMap: null,
+    loadCount: 0,
+    defaultLayout: 'dagre',   // host can override (preview uses 'cose')
+    lastLayout: null,
+    dagreAvailable: false,
+    fcoseAvailable: false,
+    colaAvailable: false,
+
+    init() {
+        DebugLog.init();
+        DebugLog.info('TopologyViewer.init() called');
+
+        // Register dagre extension if available
+        if (typeof cytoscapeDagre !== 'undefined') {
+            cytoscape.use(cytoscapeDagre);
+            this.dagreAvailable = true;
+            DebugLog.info('Dagre layout extension registered');
+        } else {
+            DebugLog.warn('Dagre extension not available - hierarchical layout will fallback');
+        }
+
+        // Register fCoSE extension if available
+        if (typeof cytoscapeFcose !== 'undefined') {
+            cytoscape.use(cytoscapeFcose);
+            this.fcoseAvailable = true;
+            DebugLog.info('fCoSE layout extension registered');
+        }
+
+        // Register Cola extension if available
+        if (typeof cytoscapeCola !== 'undefined') {
+            cytoscape.use(cytoscapeCola);
+            this.colaAvailable = true;
+            DebugLog.info('Cola layout extension registered');
+        }
+
+        // Setup QWebChannel bridge
+        if (typeof QWebChannel !== 'undefined') {
+            DebugLog.info('QWebChannel found, connecting...');
+
+            new QWebChannel(qt.webChannelTransport, (channel) => {
+                this.bridge = channel.objects.bridge;
+                DebugLog.info('QWebChannel connected!');
+
+                if (this.bridge) {
+                    DebugLog.info('Bridge methods: ' + Object.keys(this.bridge).join(', '));
+
+                    if (this.bridge.onViewerReady) {
+                        this.bridge.onViewerReady();
+                        DebugLog.info('onViewerReady() called');
+                    }
+                }
+            });
+        } else {
+            DebugLog.warn('No QWebChannel - standalone mode');
+        }
+
+        // Initialize Cytoscape
+        DebugLog.info('Initializing Cytoscape...');
+        this.cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: [],
+            style: this.getStyles(),
+            layout: { name: 'preset' },
+            minZoom: 0.1,
+            maxZoom: 4,
+            wheelSensitivity: 0.3
+        });
+
+        this.setupEventHandlers();
+        this.hideLoading();
+
+        DebugLog.info('Init complete!');
+    },
+
+    getStyles() {
+        const root = getComputedStyle(document.documentElement);
+        const textColor = root.getPropertyValue('--text-primary').trim() || '#e6e8eb';
+        const bgColor = root.getPropertyValue('--bg-surface').trim() || '#1c1f26';
+        const accentColor = root.getPropertyValue('--accent-primary').trim() || '#3b82f6';
+        const edgeColor = root.getPropertyValue('--edge-color').trim() || '#7c8491';
+
+        return [
+            {
+                selector: 'node',
+                style: {
+                    'background-color': 'data(vendorFill)',
+                    'background-image': 'data(icon)',
+                    'background-fit': 'contain',
+                    'background-clip': 'none',
+                    'width': 50,
+                    'height': 50,
+                    'label': 'data(label)',
+                    'text-valign': 'bottom',
+                    'text-halign': 'center',
+                    'text-margin-y': 5,
+                    'font-size': '10px',
+                    'font-weight': '500',
+                    'color': textColor,
+                    'text-background-color': bgColor,
+                    'text-background-opacity': 0.9,
+                    'text-background-padding': '3px',
+                    'text-background-shape': 'roundrectangle',
+                    'border-width': 2,
+                    'border-color': 'data(vendorColor)',
+                    'border-opacity': 0.8
+                }
+            },
+            {
+                selector: 'node[?discovered]',  // discovered = true (truthy)
+                style: {
+                    'border-style': 'solid'
+                }
+            },
+            {
+                selector: 'node[!discovered]',  // discovered = false (falsy)
+                style: {
+                    'border-style': 'dashed',
+                    'border-color': '#ff6b6b',
+                    'border-width': 2,
+                    'border-opacity': 0.8,
+                    'opacity': 0.7
+                }
+            },
+            {
+                selector: 'node.pending',  // queued, not dialed yet
+                style: {
+                    'border-style': 'dashed',
+                    'border-color': accentColor,
+                    'background-color': bgColor,
+                    'background-image-opacity': 0.25,
+                    'opacity': 0.6
+                }
+            },
+            {
+                selector: 'node.notdialed',  // seen as a neighbor, never dialed
+                style: {
+                    'border-style': 'dashed',
+                    'border-color': edgeColor,
+                    'background-color': bgColor,
+                    'opacity': 0.55
+                }
+            },
+            {
+                selector: 'node.failed',  // dialed, discovery failed
+                style: {
+                    'border-style': 'dashed',
+                    'border-color': '#ef4444',
+                    'opacity': 0.85
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 4,
+                    'border-opacity': 1
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'line-color': edgeColor,
+                    'curve-style': 'bezier',
+                    'label': 'data(label)',
+                    'font-size': '8px',
+                    'color': textColor,
+                    'text-wrap': 'wrap',
+                    'text-background-color': bgColor,
+                    'text-background-opacity': 0.9,
+                    'text-background-padding': '2px',
+                    'text-background-shape': 'roundrectangle',
+                    'text-rotation': 'autorotate',
+                    'text-margin-y': -8
+                }
+            },
+            {
+                // Learned from a routing table (BGP/OSPF/EIGRP), not CDP/LLDP
+                selector: 'edge[?routing]',
+                style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4] }
+            },
+            {
+                selector: 'edge:selected',
+                style: { 'width': 3, 'line-color': accentColor }
+            }
+        ];
+    },
+
+    setupEventHandlers() {
+        if (!this.cy) return;
+
+        // Modal close: X button, backdrop click, and Esc.
+        const modal = document.getElementById('device-modal');
+        if (modal && !modal.dataset.wired) {
+            modal.dataset.wired = '1';
+            document.getElementById('dm-close').onclick = () => this.hideNodeInfo();
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) this.hideNodeInfo();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') this.hideNodeInfo();
+            });
+        }
+
+        // Single-click: show info panel
+        this.cy.on('tap', 'node', (evt) => {
+            const node = evt.target;
+            this.showNodeInfo(node.data());
+            if (this.bridge && this.bridge.onNodeSelected) {
+                this.bridge.onNodeSelected(JSON.stringify(node.data()));
+            }
+        });
+
+        // Double-click: request edit dialog
+        this.cy.on('dblclick', 'node', (evt) => {
+            const node = evt.target;
+            const data = node.data();
+            DebugLog.info('Node edit requested: ' + data.id);
+
+            if (this.bridge && this.bridge.onNodeEditRequested) {
+                this.bridge.onNodeEditRequested(JSON.stringify(data));
+            }
+        });
+
+        this.cy.on('tap', 'edge', (evt) => {
+            const edge = evt.target;
+            this.showEdgeInfo(edge.data());
+            if (this.bridge && this.bridge.onEdgeSelected) {
+                this.bridge.onEdgeSelected(JSON.stringify(edge.data()));
+            }
+        });
+
+        this.cy.on('tap', (evt) => {
+            if (evt.target === this.cy) {
+                this.hideInfoPanel();
+            }
+        });
+
+        this.cy.on('dragfree', 'node', () => {
+            if (this.bridge && this.bridge.onLayoutChanged) {
+                this.bridge.onLayoutChanged(this.exportPositions());
+            }
+        });
+    },
+
+    /**
+     * Update a node's data and visual appearance (called from Python)
+     */
+    updateNode(nodeId, b64Data) {
+        DebugLog.info('updateNode: ' + nodeId);
+
+        try {
+            const jsonStr = atob(b64Data);
+            const data = JSON.parse(jsonStr);
+
+            const node = this.cy.getElementById(nodeId);
+            if (node && node.length > 0) {
+                // Update node data
+                node.data(data);
+
+                // Update visual style based on discovered status
+                const accentColor = getComputedStyle(document.documentElement)
+                    .getPropertyValue('--accent-primary').trim() || '#3b82f6';
+
+                if (data.discovered === false) {
+                    node.style({
+                        'border-style': 'dashed',
+                        'border-color': '#ff6b6b',
+                        'opacity': 0.7
+                    });
+                    // Update label to show warning if not already there
+                    if (!data.label.includes('⚠')) {
+                        node.data('label', data.label + ' ⚠');
+                    }
+                } else {
+                    node.style({
+                        'border-style': 'solid',
+                        'border-color': accentColor,
+                        'opacity': 1
+                    });
+                    // Remove warning indicator if present
+                    const label = node.data('label');
+                    if (label && label.includes(' ⚠')) {
+                        node.data('label', label.replace(' ⚠', ''));
+                    }
+                }
+
+                // Update icon if provided
+                if (data.icon) {
+                    node.style('background-image', data.icon);
+                }
+
+                this.updateStats();
+                DebugLog.info('Node updated successfully');
+            } else {
+                DebugLog.warn('Node not found: ' + nodeId);
+            }
+        } catch (e) {
+            DebugLog.error('updateNode error: ' + e.message);
+        }
+    },
+
+    /**
+     * Load topology from base64-encoded JSON (called from Python)
+     */
+    loadTopologyB64(b64String) {
+        DebugLog.info('loadTopologyB64() called');
+        try {
+            const jsonString = atob(b64String);
+            this.loadTopology(jsonString);
+        } catch (error) {
+            DebugLog.error('B64 decode error: ' + error.message);
+        }
+    },
+
+    /**
+     * Live crawl: merge a cumulative SC2 map into the current graph.
+     * Existing nodes keep their identity; placeholders that became real
+     * devices are upgraded in place; only new elements are added. The
+     * layout re-runs (animated) only when something was added.
+     */
+    mergeTopologyB64(b64String) {
+        try {
+            const payload = JSON.parse(atob(b64String));
+            this.mergeTopology(payload.map || {}, payload.status || {});
+        } catch (error) {
+            DebugLog.error('mergeTopologyB64 error: ' + error.message);
+        }
+    },
+
+    mergeTopology(mapData, status) {
+        if (!this.cy) return;
+        const elements = this.parseMapFormat(mapData);
+        const newIds = new Set();
+        let added = 0;
+
+        const newNodes = [];
+        const newEdges = [];
+        this.cy.batch(() => {
+            for (const el of elements) {
+                if (el.group !== 'nodes') continue;
+                const existing = this.cy.getElementById(el.data.id);
+                if (existing.length === 0) {
+                    newNodes.push(el);
+                } else if (el.data.discovered && existing.isNode() && !existing.data('discovered')) {
+                    existing.data(el.data);
+                    existing.removeClass('failed notdialed');
+                } else if (!el.data.discovered && existing.isNode() && existing.data('discovered') === false) {
+                    // Placeholder seen again: keep the best advertised facts
+                    if (!existing.data('ip') && el.data.ip) existing.data('ip', el.data.ip);
+                    if (existing.data('platform') === 'Not advertised' && el.data.platform !== 'Not advertised') {
+                        existing.data('platform', el.data.platform);
+                    }
+                    if (!existing.data('advertisedRaw') && el.data.advertisedRaw) {
+                        existing.data('advertisedRaw', el.data.advertisedRaw);
+                    }
+                    const seen = new Set([...(existing.data('seenFrom') || []), ...(el.data.seenFrom || [])]);
+                    existing.data('seenFrom', [...seen]);
+                }
+            }
+            added += this.addElementsSafely(newNodes);
+            newNodes.forEach(el => {
+                if (this.cy.getElementById(el.data.id).length) newIds.add(el.data.id);
+            });
+            for (const el of elements) {
+                if (el.group !== 'edges') continue;
+                if (this.cy.getElementById(el.data.id).length === 0) newEdges.push(el);
+            }
+            added += this.addElementsSafely(newEdges);
+            this.applyNodeStatus(status);
+        });
+
+        // Start new nodes at a neighbour's position so the layout
+        // animation grows the graph outward instead of flying in from 0,0.
+        newIds.forEach(id => {
+            const node = this.cy.getElementById(id);
+            const anchor = node.neighborhood('node').filter(n => !newIds.has(n.id())).first();
+            if (anchor && anchor.length) {
+                const p = anchor.position();
+                node.position({ x: p.x + (Math.random() - 0.5) * 20, y: p.y + 40 });
+            }
+        });
+
+        if (added > 0) {
+            this.applyLayout(this.lastLayout || this.defaultLayout || 'dagre');
+        }
+        this.updateStats();
+    },
+
+    /**
+     * status: {nodeId: 'failed' | 'not_dialed'} for undiscovered nodes.
+     * Undiscovered nodes with no status are still queued (pending), and are
+     * drawn neutral so a crawl in progress doesn't read as failing.
+     */
+    /** Plain-language state of a node for the detail modal. */
+    nodeStatusText(node) {
+        if (!node || node.data('discovered') !== false) return 'Discovered';
+        if (node.hasClass('failed')) return 'Login failed (known from neighbor advertisements)';
+        if (node.hasClass('notdialed')) return 'Not dialed (known from neighbor advertisements)';
+        return 'Not logged in (known from neighbor advertisements)';
+    },
+
+    applyNodeStatus(status) {
+        status = status || {};
+        this.cy.nodes('[!discovered]').forEach(n => {
+            const st = status[n.id()];
+            n.toggleClass('failed', st === 'failed');
+            n.toggleClass('notdialed', st === 'not_dialed');
+            n.toggleClass('pending', !st);
+            n.data('label', st === 'failed' ? n.id() + ' ⚠' : n.id());
+        });
+    },
+
+    /**
+     * Load topology - MAIN ENTRY POINT
+     */
+    loadTopology(jsonString) {
+        this.loadCount++;
+        DebugLog.info('loadTopology() call #' + this.loadCount);
+
+        if (!jsonString) {
+            DebugLog.error('Empty input!');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            let data = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+
+            let elements = [];
+            if (data.cytoscape) {
+                DebugLog.info('Format: VelocityMaps');
+                elements = this.parseCytoscapeFormat(data.cytoscape);
+            } else if (data.nodes && data.edges) {
+                DebugLog.info('Format: Cytoscape');
+                elements = this.parseCytoscapeFormat(data);
+            } else if (typeof data === 'object' && !Array.isArray(data)) {
+                DebugLog.info('Format: SC2 map.json');
+                elements = this.parseMapFormat(data);
+            }
+
+            this.cy.elements().remove();
+            this.addElementsSafely(elements);
+
+            DebugLog.info('Loaded: ' + this.cy.nodes().length + ' nodes, ' + this.cy.edges().length + ' edges');
+
+            this.updateStats();
+
+            // Host-configurable default (dagre unless overridden)
+            this.applyLayout(this.defaultLayout || 'dagre');
+
+            this.hideLoading();
+
+        } catch (error) {
+            DebugLog.error('loadTopology error: ' + error.message);
+            this.hideLoading();
+        }
+    },
+
+    testLoad() {
+        const testData = {
+            "core-switch": {
+                "node_details": { "ip": "10.0.0.1", "platform": "Cisco Catalyst 9500" },
+                "peers": {
+                    "dist-sw-1": { "connections": [["Gi1/0/1", "Gi0/1"]] },
+                    "dist-sw-2": { "connections": [["Gi1/0/2", "Gi0/1"]] }
+                }
+            },
+            "dist-sw-1": {
+                "node_details": { "ip": "10.0.1.1", "platform": "Arista DCS-7050" },
+                "peers": {
+                    "core-switch": { "connections": [["Gi0/1", "Gi1/0/1"]] },
+                    "access-1": { "connections": [["Gi1/1", "Gi0/1"]] },
+                    "access-2": { "connections": [["Gi1/2", "Gi0/1"]] }
+                }
+            },
+            "dist-sw-2": {
+                "node_details": { "ip": "10.0.2.1", "platform": "Juniper QFX5100" },
+                "peers": {
+                    "core-switch": { "connections": [["Gi0/1", "Gi1/0/2"]] },
+                    "access-3": { "connections": [["Gi1/1", "Gi0/1"]] }
+                }
+            },
+            "access-1": {
+                "node_details": { "ip": "10.0.10.1", "platform": "Cisco WS-C2960" },
+                "peers": { "dist-sw-1": { "connections": [["Gi0/1", "Gi1/1"]] } }
+            },
+            "access-2": {
+                "node_details": { "ip": "10.0.20.1", "platform": "Cisco WS-C2960" },
+                "peers": { "dist-sw-1": { "connections": [["Gi0/1", "Gi1/2"]] } }
+            },
+            "access-3": {
+                "node_details": { "ip": "10.0.30.1", "platform": "Cisco WS-C2960" },
+                "peers": { "dist-sw-2": { "connections": [["Gi0/1", "Gi1/1"]] } }
+            }
+        };
+        this.loadTopology(JSON.stringify(testData));
+    },
+
+    parseCytoscapeFormat(data) {
+        const elements = [];
+
+        if (data.nodes) {
+            data.nodes.forEach(n => {
+                const nodeData = n.data || n;
+                elements.push({
+                    group: 'nodes',
+                    data: {
+                        id: nodeData.id,
+                        label: nodeData.label || nodeData.id,
+                        ip: nodeData.ip || '',
+                        platform: nodeData.platform || 'Unknown',
+                        icon: nodeData.icon || this.getIconForPlatform(nodeData.platform),
+                        discovered: nodeData.discovered !== false,
+                        vendorColor: this.getVendorColor(nodeData.platform, nodeData.id),
+                        vendorFill: this.getVendorFill(nodeData.platform, nodeData.id)
+                    },
+                    position: n.position || undefined
+                });
+            });
+        }
+
+        if (data.edges) {
+            data.edges.forEach(e => {
+                const edgeData = e.data || e;
+                elements.push({
+                    group: 'edges',
+                    data: {
+                        id: edgeData.id || `${edgeData.source}-${edgeData.target}`,
+                        source: edgeData.source,
+                        target: edgeData.target,
+                        label: edgeData.label || ''
+                    }
+                });
+            });
+        }
+
+        return elements;
+    },
+
+    parseMapFormat(data) {
+        const elements = [];
+        const addedEdges = new Set();
+        const nodeIds = new Set();
+
+        const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+        const validId = v => typeof v === 'string' && v.trim() !== '';
+        const skipped = [];
+
+        // First pass: create discovered nodes
+        for (const [deviceName, deviceData] of Object.entries(data)) {
+            if (!validId(deviceName) || !isObj(deviceData)) {
+                skipped.push('device ' + JSON.stringify(deviceName));
+                continue;
+            }
+            const details = isObj(deviceData.node_details) ? deviceData.node_details : {};
+            details.platform = details.platform ? String(details.platform) : '';
+            nodeIds.add(deviceName);
+
+            elements.push({
+                group: 'nodes',
+                data: {
+                    id: deviceName,
+                    label: deviceName,
+                    ip: details.ip || '',
+                    platform: details.platform || 'Unknown',
+                    model: details.model || '',
+                    serial: details.serial || '',
+                    os_version: details.os_version || '',
+                    vendor: details.vendor || '',
+                    metadata: details.metadata || {},
+                    icon: details.icon || this.getIconForPlatform(details.platform),
+                    discovered: true,
+                    vendorColor: this.getVendorColor(details.platform, deviceName),
+                    vendorFill: this.getVendorFill(details.platform, deviceName)
+                }
+            });
+        }
+
+        // Second pass: create edges and placeholder nodes
+        const placeholders = new Map();
+        for (const [deviceName, deviceData] of Object.entries(data)) {
+            if (!validId(deviceName) || !isObj(deviceData)) continue;
+            const peers = isObj(deviceData.peers) ? deviceData.peers : {};
+
+            for (const [peerName, rawPeer] of Object.entries(peers)) {
+                if (!validId(peerName)) {
+                    skipped.push(`peer ${JSON.stringify(peerName)} of ${deviceName}`);
+                    continue;
+                }
+                const peerData = isObj(rawPeer) ? rawPeer : {};
+                // What the neighbor advertised (CDP platform / LLDP system
+                // description, management address) - the only facts known
+                // about a device we never logged into.
+                const advPlatform = (typeof peerData.platform === 'string'
+                    && peerData.platform && peerData.platform !== 'Unknown') ? peerData.platform : '';
+                const advIp = typeof peerData.ip === 'string' ? peerData.ip : '';
+                const adv = isObj(peerData.advertised) ? peerData.advertised : {};
+                const advRaw = [adv.name, adv.platform, adv.description]
+                    .filter(v => typeof v === 'string' && v).join(' | ');
+                // Create placeholder for undiscovered peer
+                if (!nodeIds.has(peerName)) {
+                    nodeIds.add(peerName);
+                    placeholders.set(peerName, {
+                        group: 'nodes',
+                        data: {
+                            id: peerName,
+                            label: peerName + ' ⚠',
+                            ip: advIp,
+                            platform: advPlatform || 'Not advertised',
+                            advertised: true,
+                            advertisedRaw: advRaw,
+                            seenFrom: [deviceName],
+                            icon: this.getUndiscoveredIcon(),
+                            discovered: false,
+                            vendorColor: '#ff6b6b',
+                            vendorFill: 'rgba(255, 107, 107, 0.2)'
+                        }
+                    });
+                    elements.push(placeholders.get(peerName));
+                } else if (placeholders.has(peerName)) {
+                    // Seen from several devices: fill gaps, record each source
+                    const d = placeholders.get(peerName).data;
+                    if (!d.ip && advIp) d.ip = advIp;
+                    if (d.platform === 'Not advertised' && advPlatform) d.platform = advPlatform;
+                    if (!d.advertisedRaw && advRaw) d.advertisedRaw = advRaw;
+                    if (!d.seenFrom.includes(deviceName)) d.seenFrom.push(deviceName);
+                }
+
+                const edgeId = [deviceName, peerName].sort().join('--');
+                if (!addedEdges.has(edgeId)) {
+                    addedEdges.add(edgeId);
+
+                    let label = '';
+                    const connections = Array.isArray(peerData.connections)
+                        ? peerData.connections.filter(c => Array.isArray(c))
+                        : [];
+                    if (connections.length > 0) {
+                        const labels = connections
+                            .filter(c => c.length >= 2)
+                            .map(c => `${c[0]} ↔ ${c[1]}`);
+                        label = labels.join('\n');
+                    }
+
+                    // Dashed only when every connection, seen from both
+                    // ends, came from a routing table. Maps without
+                    // "protocols" (older SC2) stay solid.
+                    const ROUTING = ['bgp', 'ospf', 'eigrp'];
+                    const protos = Array.isArray(peerData.protocols) ? [...peerData.protocols] : [];
+                    const backNode = isObj(data[peerName]) ? data[peerName] : {};
+                    const back = isObj(backNode.peers) ? backNode.peers[deviceName] : null;
+                    if (isObj(back) && Array.isArray(back.protocols)) protos.push(...back.protocols);
+                    const routing = protos.length > 0 && protos.every(p => ROUTING.includes(p));
+
+                    elements.push({
+                        group: 'edges',
+                        data: {
+                            id: edgeId,
+                            source: deviceName,
+                            target: peerName,
+                            label: label,
+                            connectionCount: connections.length,
+                            routing: routing,
+                            protocols: [...new Set(protos)].join('/')
+                        }
+                    });
+                }
+            }
+        }
+
+        if (skipped.length) {
+            DebugLog.warn(`Map: skipped ${skipped.length} malformed entr${skipped.length === 1 ? 'y' : 'ies'}: `
+                + skipped.slice(0, 5).join(', ') + (skipped.length > 5 ? ', ...' : ''));
+        }
+        return elements;
+    },
+
+    /**
+     * Add elements one at a time so a single bad element (duplicate id,
+     * edge to a missing node) is logged and skipped instead of aborting
+     * the whole load. Returns the number added.
+     */
+    addElementsSafely(elements) {
+        let added = 0;
+        const failures = [];
+        for (const el of elements) {
+            try {
+                this.cy.add(el);
+                added++;
+            } catch (e) {
+                failures.push(`${el.group} ${JSON.stringify(el.data && el.data.id)}: ${e.message}`);
+            }
+        }
+        if (failures.length) {
+            DebugLog.warn(`Skipped ${failures.length} element(s): ` + failures.slice(0, 5).join('; ')
+                + (failures.length > 5 ? '; ...' : ''));
+        }
+        return added;
+    },
+
+    getUndiscoveredIcon() {
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <rect x="4" y="14" width="40" height="20" rx="3" fill="#4a4a4a" stroke="#ff6b6b" stroke-width="2" stroke-dasharray="4,2"/>
+                <text x="24" y="28" text-anchor="middle" fill="#ff6b6b" font-size="16" font-weight="bold">?</text>
+            </svg>
+        `);
+    },
+
+    getIconForPlatform(platform) {
+        if (!platform) return this.getDefaultIcon();
+        const p = platform.toLowerCase();
+        if (p.includes('cisco')) return this.getCiscoSwitchIcon();
+        if (p.includes('arista')) return this.getAristaSwitchIcon();
+        if (p.includes('juniper')) return this.getJuniperSwitchIcon();
+        return this.getDefaultIcon();
+    },
+
+    getCiscoSwitchIcon() {
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <rect x="4" y="14" width="40" height="20" rx="3" fill="#049fd9" stroke="#00bceb" stroke-width="1.5"/>
+                <circle cx="12" cy="24" r="2.5" fill="#6cc04a"/><circle cx="20" cy="24" r="2.5" fill="#6cc04a"/>
+                <circle cx="28" cy="24" r="2.5" fill="#6cc04a"/><circle cx="36" cy="24" r="2.5" fill="#fbab18"/>
+            </svg>
+        `);
+    },
+
+    getAristaSwitchIcon() {
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <rect x="4" y="14" width="40" height="20" rx="3" fill="#5c4ee5" stroke="#7c6ef0" stroke-width="1.5"/>
+                <circle cx="12" cy="24" r="2.5" fill="#00e5a0"/><circle cx="20" cy="24" r="2.5" fill="#00e5a0"/>
+                <circle cx="28" cy="24" r="2.5" fill="#00e5a0"/><circle cx="36" cy="24" r="2.5" fill="#ffcc00"/>
+            </svg>
+        `);
+    },
+
+    getJuniperSwitchIcon() {
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <rect x="4" y="14" width="40" height="20" rx="3" fill="#84bd00" stroke="#a0d911" stroke-width="1.5"/>
+                <circle cx="12" cy="24" r="2.5" fill="#ffffff"/><circle cx="20" cy="24" r="2.5" fill="#ffffff"/>
+                <circle cx="28" cy="24" r="2.5" fill="#ffffff"/><circle cx="36" cy="24" r="2.5" fill="#ff6600"/>
+            </svg>
+        `);
+    },
+
+    getDefaultIcon() {
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <rect x="4" y="14" width="40" height="20" rx="3" fill="#2a4a7a" stroke="#4a9eff" stroke-width="2"/>
+                <circle cx="12" cy="24" r="3" fill="#00ff88"/><circle cx="20" cy="24" r="3" fill="#00ff88"/>
+                <circle cx="28" cy="24" r="3" fill="#ffaa00"/><rect x="34" y="20" width="6" height="8" rx="1" fill="#4a9eff"/>
+            </svg>
+        `);
+    },
+
+    // Vendor colors matching draw.io export
+    vendorColors: {
+        'cisco': '#049fd9',    // Cisco blue
+        'juniper': '#F58536',  // Juniper orange
+        'arista': '#2D8659',   // Arista green
+        'paloalto': '#FA582D', // Palo Alto orange-red
+        'fortinet': '#EE3124', // Fortinet red
+        'default': '#4a9eff'   // Default accent blue
+    },
+
+    // Muted fill colors (semi-transparent for background tint)
+    vendorFills: {
+        'cisco': 'rgba(4, 159, 217, 0.25)',
+        'juniper': 'rgba(245, 133, 54, 0.25)',
+        'arista': 'rgba(45, 134, 89, 0.25)',
+        'paloalto': 'rgba(250, 88, 45, 0.25)',
+        'fortinet': 'rgba(238, 49, 36, 0.25)',
+        'default': 'rgba(74, 158, 255, 0.2)'
+    },
+
+    detectVendor(platform, nodeId) {
+        const p = (platform || '').toLowerCase();
+        const n = (nodeId || '').toLowerCase();
+
+        // Juniper patterns
+        const juniperPatterns = ['junos', 'juniper', 'mx', 'qfx', 'ex2', 'ex3', 'ex4', 'srx', 'ptx', 'acx'];
+        for (const pattern of juniperPatterns) {
+            if (p.includes(pattern) || n.includes(pattern)) return 'juniper';
+        }
+
+        // Arista patterns
+        const aristaPatterns = ['arista', 'eos', 'veos', 'dcs-', 'ccs-'];
+        for (const pattern of aristaPatterns) {
+            if (p.includes(pattern) || n.includes(pattern)) return 'arista';
+        }
+
+        // Palo Alto patterns
+        const paloPatterns = ['palo', 'pan-', 'pa-'];
+        for (const pattern of paloPatterns) {
+            if (p.includes(pattern) || n.includes(pattern)) return 'paloalto';
+        }
+
+        // Fortinet patterns
+        const fortiPatterns = ['forti', 'fortigate', 'fortios'];
+        for (const pattern of fortiPatterns) {
+            if (p.includes(pattern) || n.includes(pattern)) return 'fortinet';
+        }
+
+        // Cisco patterns (check last as it's the broadest)
+        const ciscoPatterns = ['cisco', 'ios', 'nx-os', 'nexus', 'catalyst', 'c9', 'ws-c', 'isr', 'asr', 'asa'];
+        for (const pattern of ciscoPatterns) {
+            if (p.includes(pattern) || n.includes(pattern)) return 'cisco';
+        }
+
+        return 'default';
+    },
+
+    getVendorColor(platform, nodeId) {
+        const vendor = this.detectVendor(platform, nodeId);
+        return this.vendorColors[vendor] || this.vendorColors['default'];
+    },
+
+    getVendorFill(platform, nodeId) {
+        const vendor = this.detectVendor(platform, nodeId);
+        return this.vendorFills[vendor] || this.vendorFills['default'];
+    },
+
+    setPlatformMap(mapJson) {
+        try {
+            this.platformMap = JSON.parse(mapJson);
+            DebugLog.info('Platform map loaded');
+        } catch (e) {
+            DebugLog.error('Failed to parse platform map: ' + e.message);
+        }
+    },
+
+    applyLayout(algorithm = 'dagre') {
+        if (!this.cy || this.cy.nodes().length === 0) return;
+        this.lastLayout = algorithm;
+
+        DebugLog.info('Applying layout: ' + algorithm);
+
+        let layoutConfig;
+
+        switch (algorithm) {
+            case 'dagre':
+                if (this.dagreAvailable) {
+                    layoutConfig = {
+                        name: 'dagre',
+                        rankDir: 'TB',           // Top to Bottom
+                        nodeSep: 60,             // Horizontal spacing
+                        rankSep: 80,             // Vertical spacing between tiers
+                        edgeSep: 10,
+                        ranker: 'network-simplex',
+                        animate: true,
+                        animationDuration: 500,
+                        fit: true,
+                        padding: 30
+                    };
+                } else {
+                    DebugLog.warn('Dagre not available, falling back to breadthfirst');
+                    layoutConfig = {
+                        name: 'breadthfirst',
+                        directed: true,
+                        spacingFactor: 1.5,
+                        animate: true,
+                        animationDuration: 500,
+                        fit: true,
+                        padding: 30
+                    };
+                }
+                break;
+
+            case 'dagre-lr':
+                if (this.dagreAvailable) {
+                    layoutConfig = {
+                        name: 'dagre',
+                        rankDir: 'LR',           // Left to Right
+                        nodeSep: 50,
+                        rankSep: 100,
+                        edgeSep: 10,
+                        ranker: 'network-simplex',
+                        animate: true,
+                        animationDuration: 500,
+                        fit: true,
+                        padding: 30
+                    };
+                } else {
+                    DebugLog.warn('Dagre not available, falling back to breadthfirst');
+                    return this.applyLayout('breadthfirst');
+                }
+                break;
+
+            case 'fcose':
+                if (this.fcoseAvailable) {
+                    layoutConfig = {
+                        name: 'fcose',
+                        animate: true,
+                        animationDuration: 500,
+                        quality: 'default',
+                        randomize: true,
+                        nodeDimensionsIncludeLabels: true,
+                        uniformNodeDimensions: false,
+                        packComponents: true,
+                        nodeRepulsion: 6500,
+                        idealEdgeLength: 80,
+                        edgeElasticity: 0.45,
+                        nestingFactor: 0.1,
+                        gravity: 0.25,
+                        gravityRange: 3.8,
+                        fit: true,
+                        padding: 30
+                    };
+                } else {
+                    DebugLog.warn('fCoSE not available, falling back to cose');
+                    return this.applyLayout('cose');
+                }
+                break;
+
+            case 'cola':
+                if (this.colaAvailable) {
+                    layoutConfig = {
+                        name: 'cola',
+                        animate: true,
+                        animationDuration: 500,
+                        maxSimulationTime: 4000,
+                        ungrabifyWhileSimulating: false,
+                        fit: true,
+                        padding: 30,
+                        nodeDimensionsIncludeLabels: true,
+                        avoidOverlap: true,
+                        convergenceThreshold: 0.01,
+                        edgeLength: 120,
+                    };
+                } else {
+                    DebugLog.warn('Cola not available, falling back to cose');
+                    return this.applyLayout('cose');
+                }
+                break;
+
+            case 'cose':
+                layoutConfig = {
+                    name: 'cose',
+                    animate: true,
+                    animationDuration: 500,
+                    nodeRepulsion: 8000,
+                    idealEdgeLength: 100,
+                    gravity: 0.25,
+                    fit: true,
+                    padding: 30
+                };
+                break;
+
+            case 'concentric':
+                layoutConfig = {
+                    name: 'concentric',
+                    animate: true,
+                    animationDuration: 500,
+                    concentric: function(node) {
+                        return node.degree();
+                    },
+                    levelWidth: function(nodes) {
+                        return Math.max(1, Math.floor(nodes.length / 4));
+                    },
+                    minNodeSpacing: 50,
+                    fit: true,
+                    padding: 30
+                };
+                break;
+
+            case 'grid':
+                layoutConfig = {
+                    name: 'grid',
+                    animate: true,
+                    animationDuration: 300,
+                    fit: true,
+                    padding: 30,
+                    avoidOverlap: true,
+                    condense: true
+                };
+                break;
+
+            case 'circle':
+                layoutConfig = {
+                    name: 'circle',
+                    animate: true,
+                    animationDuration: 300,
+                    fit: true,
+                    padding: 30,
+                    avoidOverlap: true
+                };
+                break;
+
+            case 'breadthfirst':
+                layoutConfig = {
+                    name: 'breadthfirst',
+                    animate: true,
+                    animationDuration: 300,
+                    directed: false,
+                    spacingFactor: 1.5,
+                    fit: true,
+                    padding: 30
+                };
+                break;
+
+            case 'balloon': {
+                const pos = this.balloonPositions();
+                layoutConfig = {
+                    name: 'preset',
+                    positions: n => pos[n.id()] || n.position(),
+                    animate: false,      // snap: thousands of nodes, and fit lands reliably
+                    fit: true,
+                    padding: 40
+                };
+                break;
+            }
+
+            default:
+                DebugLog.warn('Unknown layout: ' + algorithm + ', using dagre');
+                return this.applyLayout('dagre');
+        }
+
+        this.cy.layout(layoutConfig).run();
+    },
+
+    /**
+     * Balloon tree (yEd-style radial tree) positions, keyed by node id.
+     *
+     * Per connected component: root at the selected node if there is one,
+     * else the best-connected discovered device. A BFS spanning tree hangs
+     * every node off one parent; each subtree is a "balloon" whose radius is
+     * computed bottom-up, and children sit on a ring around their parent with
+     * an angular share proportional to their balloon's size, so subtrees
+     * never overlap. Non-root nodes leave a wedge open toward their parent.
+     * Edges outside the tree are drawn as they fall. Components are packed
+     * in rows, largest first.
+     */
+    balloonPositions() {
+        const LEAF_R = 34, GAP = 14, MIN_RING = 90, PARENT_GAP = Math.PI / 3;
+        const nodes = this.cy.nodes().filter(n => n.visible());
+        const ids = new Set(nodes.map(n => n.id()));
+        const adj = new Map();
+        nodes.forEach(n => adj.set(n.id(), []));
+        this.cy.edges().filter(e => e.visible()).forEach(e => {
+            const a = e.source().id(), b = e.target().id();
+            if (a === b || !ids.has(a) || !ids.has(b)) return;
+            adj.get(a).push(b);
+            adj.get(b).push(a);
+        });
+        const degree = id => new Set(adj.get(id)).size;
+        const discovered = id => !!this.cy.getElementById(id).data('discovered');
+        const selected = new Set(this.cy.nodes(':selected').map(n => n.id()));
+
+        // Connected components
+        const seen = new Set(), comps = [];
+        for (const id of ids) {
+            if (seen.has(id)) continue;
+            const comp = [], q = [id];
+            seen.add(id);
+            while (q.length) {
+                const v = q.shift();
+                comp.push(v);
+                for (const w of adj.get(v)) if (!seen.has(w)) { seen.add(w); q.push(w); }
+            }
+            comps.push(comp);
+        }
+
+        // Eccentricity: longest BFS distance from id within its component
+        const eccentricity = id => {
+            const dist = new Map([[id, 0]]), q = [id];
+            let far = 0;
+            for (let i = 0; i < q.length; i++) {
+                const v = q[i], d = dist.get(v);
+                far = Math.max(far, d);
+                for (const w of adj.get(v)) if (!dist.has(w)) { dist.set(w, d + 1); q.push(w); }
+            }
+            return far;
+        };
+
+        const layoutComponent = comp => {
+            // Root: a selected node; else the graph center (smallest
+            // eccentricity) among discovered, non-leaf nodes. Degree alone
+            // would crown a TOR with forty servers over the core.
+            let root = comp.find(id => selected.has(id));
+            if (!root) {
+                let pool = comp.filter(id => discovered(id) && degree(id) > 1);
+                if (!pool.length) pool = comp.filter(id => degree(id) > 1);
+                if (!pool.length) pool = comp;
+                const score = new Map(pool.map(id => [id, eccentricity(id)]));
+                root = pool.reduce((a, b) =>
+                    score.get(b) < score.get(a) || (score.get(b) === score.get(a) && degree(b) > degree(a)) ? b : a);
+            }
+
+            // BFS spanning tree; better-connected children claim first
+            const children = new Map(comp.map(id => [id, []]));
+            const parent = new Map([[root, null]]);
+            const order = [root];
+            for (let i = 0; i < order.length; i++) {
+                const v = order[i];
+                const next = [...new Set(adj.get(v))].filter(w => !parent.has(w))
+                    .sort((a, b) => degree(b) - degree(a));
+                for (const w of next) { parent.set(w, v); children.get(v).push(w); order.push(w); }
+            }
+
+            // Bottom-up balloon radii
+            const r = new Map(), ring = new Map();
+            for (let i = order.length - 1; i >= 0; i--) {
+                const v = order[i], kids = children.get(v);
+                if (!kids.length) { r.set(v, LEAF_R); ring.set(v, 0); continue; }
+                const span = v === root ? 2 * Math.PI : 2 * Math.PI - PARENT_GAP;
+                const need = kids.reduce((t, c) => t + 2 * r.get(c) + GAP, 0);
+                const R = Math.max(MIN_RING, need / span);
+                ring.set(v, R);
+                r.set(v, R + Math.max(...kids.map(c => r.get(c))));
+            }
+
+            // Top-down placement
+            const pos = { [root]: { x: 0, y: 0 } };
+            for (const v of order) {
+                const kids = children.get(v);
+                if (!kids.length) continue;
+                // Alternate large and small balloons around the ring
+                const bySize = [...kids].sort((a, b) => r.get(b) - r.get(a));
+                const ordered = [];
+                for (let lo = 0, hi = bySize.length - 1; lo <= hi; lo++, hi--) {
+                    ordered.push(bySize[lo]);
+                    if (lo !== hi) ordered.push(bySize[hi]);
+                }
+                const p = pos[v];
+                let start = 0, span = 2 * Math.PI;
+                if (v !== root) {
+                    const pp = pos[parent.get(v)];
+                    start = Math.atan2(pp.y - p.y, pp.x - p.x) + PARENT_GAP / 2;
+                    span = 2 * Math.PI - PARENT_GAP;
+                }
+                const total = ordered.reduce((t, c) => t + 2 * r.get(c) + GAP, 0);
+                let acc = 0;
+                for (const c of ordered) {
+                    const w = (2 * r.get(c) + GAP) / total * span;
+                    const theta = start + acc + w / 2;
+                    acc += w;
+                    pos[c] = { x: p.x + ring.get(v) * Math.cos(theta), y: p.y + ring.get(v) * Math.sin(theta) };
+                }
+            }
+            return { pos, radius: r.get(root) };
+        };
+
+        // Pack components in rows, largest first
+        const laid = comps.map(layoutComponent).sort((a, b) => b.radius - a.radius);
+        const area = laid.reduce((t, c) => t + (2 * c.radius) ** 2, 0);
+        const rowWidth = Math.max(2 * (laid[0] ? laid[0].radius : 0), Math.sqrt(area) * 1.3);
+        const out = {};
+        let x = 0, y = 0, rowH = 0;
+        for (const c of laid) {
+            const d = 2 * c.radius + 2 * GAP;
+            if (x > 0 && x + d > rowWidth) { x = 0; y += rowH; rowH = 0; }
+            for (const [id, p] of Object.entries(c.pos)) {
+                out[id] = { x: x + c.radius + p.x, y: y + c.radius + p.y };
+            }
+            x += d;
+            rowH = Math.max(rowH, d);
+        }
+        return out;
+    },
+
+    fitView() {
+        if (this.cy) this.cy.fit(null, 30);
+    },
+
+    // --- Device detail modal -------------------------------------------
+    // Device-supplied strings (sysDescr, entPhysical columns, ifAlias) reach
+    // the DOM here, so everything is escaped before insertion.
+    dmEsc(v) {
+        return String(v == null ? '' : v).replace(/[&<>"']/g,
+            c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    },
+
+    dmUptime(ticks) {
+        // sysUpTime is in hundredths of a second.
+        if (ticks == null || ticks === '') return '';
+        const s = Math.floor(Number(ticks) / 100);
+        if (!isFinite(s)) return '';
+        const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+        return `${d}d ${h}h ${m}m`;
+    },
+
+    // Render rows as a key/value table, skipping blanks so sparse devices
+    // (SSH-only, no ENTITY-MIB) do not show a wall of empty fields.
+    dmKV(pairs) {
+        const rows = pairs
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .map(([k, v]) => `<tr><td class="dm-key">${this.dmEsc(k)}</td><td>${this.dmEsc(v)}</td></tr>`)
+            .join('');
+        return rows ? `<table class="dm-table">${rows}</table>` : '<div class="dm-empty">No data</div>';
+    },
+
+    dmTable(cols, rows) {
+        if (!rows || !rows.length) return '<div class="dm-empty">No data</div>';
+        const head = cols.map(c => `<th>${this.dmEsc(c.label)}</th>`).join('');
+        const body = rows.map(r =>
+            '<tr>' + cols.map(c => `<td>${this.dmEsc(r[c.key] == null ? '' : r[c.key])}</td>`).join('') + '</tr>'
+        ).join('');
+        return `<table class="dm-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    },
+
+    // Second-pass status per method, as recorded in device.json enrichment.
+    dmCollection(enr) {
+        const ssh = enr.ssh || {}, snmp = enr.snmp || {};
+        const kb = b => (b == null || b === '') ? '' : `${(b / 1024).toFixed(1)} KB`;
+        let html = this.dmKV([['Collected At', enr.collected_at]]);
+        html += '<div class="dm-section">SSH</div>' + this.dmKV([
+            ['Status', ssh.status],
+            ['Credential', ssh.credential],
+            ['Route', ssh.jump_via || (ssh.status === 'ok' ? 'direct' : '')],
+            ['Config', ssh.config_file ? `${ssh.config_file} (${kb(ssh.config_bytes)})` : ''],
+            ['Inventory', ssh.inventory_file ? `${ssh.inventory_file} (${kb(ssh.inventory_bytes)})` : ''],
+            ['Duration (ms)', ssh.duration_ms],
+        ]) + (ssh.errors || []).map(e => `<div class="dm-err">${this.dmEsc(e)}</div>`).join('');
+        html += '<div class="dm-section">SNMP</div>' + this.dmKV([
+            ['Status', snmp.status],
+            ['Credential', snmp.credential],
+            ['Collected', (snmp.collected || []).join(', ')],
+            ['Still Missing', (snmp.missing || []).join(', ')],
+            ['Note', snmp.note],
+        ]) + (snmp.errors || []).map(e => `<div class="dm-err">${this.dmEsc(e)}</div>`).join('');
+        return html;
+    },
+
+    // Fetch config / inventory text through the Python bridge and render it
+    // with a line filter (substring, case-insensitive - an "| include").
+    dmLoadArtifact(pane, deviceDir, kind) {
+        if (!this.bridge || !this.bridge.getDeviceArtifact) {
+            pane.innerHTML = '<div class="dm-empty">Available in the application only - ' +
+                             `${this.dmEsc(kind)}.txt is in the device folder.</div>`;
+            return;
+        }
+        this.bridge.getDeviceArtifact(deviceDir, kind, (resJson) => {
+            let res;
+            try { res = JSON.parse(resJson); } catch (e) { res = { ok: false, error: String(e) }; }
+            if (!res.ok) {
+                pane.innerHTML = `<div class="dm-err">${this.dmEsc(res.error || 'Not available')}</div>`;
+                return;
+            }
+            const lines = (res.text || '').replace(/\r\n?/g, '\n').split('\n');
+            pane.innerHTML =
+                `<input class="dm-filter dm-linefilter" placeholder="Filter lines (like | include)...">` +
+                '<pre class="dm-pre"></pre>' +
+                `<div class="dm-meta"></div>`;
+            const pre = pane.querySelector('.dm-pre');
+            const meta = pane.querySelector('.dm-meta');
+            const render = (q) => {
+                const shown = q ? lines.filter(l => l.toLowerCase().includes(q)) : lines;
+                pre.textContent = shown.join('\n');
+                meta.textContent = (q ? `${shown.length} of ${lines.length} lines` : `${lines.length} lines`) +
+                    (res.truncated ? '  -  truncated (file larger than 8 MB)' : '') +
+                    (res.path ? `  -  ${res.path}` : '');
+            };
+            render('');
+            pane.querySelector('.dm-linefilter').oninput = (ev) => render(ev.target.value.toLowerCase());
+        });
+    },
+
+    // MAC table: parsed rows from the bridge (vendor, category, IP from ARP
+    // across the map, uplink marking). Uplinks shown by default - on one
+    // switch you want everything the port learned - with a toggle to hide.
+    dmLoadMacTable(pane, deviceDir) {
+        if (!this.bridge || !this.bridge.getMacTable) {
+            pane.innerHTML = '<div class="dm-empty">Available in the application only - ' +
+                             'mac_table.txt is in the device folder.</div>';
+            return;
+        }
+        this.bridge.getMacTable(deviceDir, (resJson) => {
+            let res;
+            try { res = JSON.parse(resJson); } catch (e) { res = { ok: false, error: String(e) }; }
+            if (!res.ok) {
+                pane.innerHTML = `<div class="dm-err">${this.dmEsc(res.error || 'Not available')}</div>`;
+                return;
+            }
+            const all = (res.rows || []).map(r => Object.assign({}, r, {
+                ipcol: r.ip ? (r.arp_source ? `${r.ip} (${r.arp_source})` : r.ip) : '',
+                role: r.uplink ? 'uplink' : '',
+            }));
+            pane.innerHTML =
+                '<div class="dm-mac-controls">' +
+                '<input class="dm-filter dm-mac-filter" placeholder="Filter: port, VLAN, MAC, vendor, IP...">' +
+                '<label class="dm-mac-toggle"><input type="checkbox" class="dm-mac-hide"> Hide uplinks</label>' +
+                '</div><div class="dm-mac-table"></div><div class="dm-meta"></div>';
+            const holder = pane.querySelector('.dm-mac-table');
+            const meta = pane.querySelector('.dm-meta');
+            const filter = pane.querySelector('.dm-mac-filter');
+            const hide = pane.querySelector('.dm-mac-hide');
+            const cols = [
+                {key:'port', label:'Port'}, {key:'vlan', label:'VLAN'}, {key:'mac', label:'MAC'},
+                {key:'vendor', label:'Vendor'}, {key:'category', label:'Category'},
+                {key:'ipcol', label:'IP'}, {key:'port_macs', label:'Port MACs'},
+                {key:'role', label:'Role'}, {key:'note', label:'Note'},
+            ];
+            const render = () => {
+                const q = filter.value.toLowerCase();
+                const rows = all.filter(r => !(hide.checked && r.uplink) &&
+                    (!q || cols.some(c => String(r[c.key] == null ? '' : r[c.key]).toLowerCase().includes(q))));
+                holder.innerHTML = this.dmTable(cols, rows);
+                const uplinks = all.filter(r => r.uplink).length;
+                meta.textContent = `${rows.length} of ${all.length} entries` +
+                    (uplinks ? `  -  ${uplinks} learned on uplinks` : '') +
+                    (res.path ? `  -  ${res.path}` : '');
+            };
+            filter.oninput = render;
+            hide.onchange = render;
+            render();
+        });
+    },
+
+    showNodeInfo(data) {
+        const m = data.metadata || {};
+        const counts = m.counts || {};
+
+        document.getElementById('dm-title').textContent = data.label || data.id;
+        document.getElementById('dm-sub').textContent =
+            [data.ip, data.platform].filter(Boolean).join('  •  ');
+
+        const ifaces = m.interfaces || [];
+        const neighbors = m.neighbors || [];
+        const arp = m.arp_table || {};
+        const arpRows = Object.keys(arp).map(mac => ({ mac: mac, ip: arp[mac] }));
+        const chassis = m.chassis || [];
+        const enr = m.enrichment || {};
+        const ssh = enr.ssh || {};
+
+        const panes = [
+            { id: 'overview', label: 'Overview', html: this.dmKV([
+                ['Name', data.label || data.id],
+                ['sysName', m.sys_name],
+                ['FQDN', m.fqdn],
+                ['IP', data.ip],
+                ['Vendor', data.vendor],
+                ['Platform', data.platform],
+                ['Location', m.sys_location],
+                ['Contact', m.sys_contact],
+                ['Uptime', this.dmUptime(m.uptime_ticks)],
+                ['Status', this.nodeStatusText(this.cy && data.id ? this.cy.getElementById(data.id) : null)],
+                ['Seen from', data.discovered === false && Array.isArray(data.seenFrom)
+                    ? data.seenFrom.join(', ') : ''],
+                ['Advertised (raw)', data.discovered === false ? data.advertisedRaw : ''],
+                ['sysDescr', m.sys_descr],
+            ])},
+            { id: 'hardware', label: 'Hardware', html: this.dmKV([
+                ['Model', data.model],
+                ['Serial', data.serial],
+                ['OS Version', data.os_version],
+                ['Manufacturer', m.mfg_name],
+                ['Hardware Rev', m.hardware_rev],
+                ['Firmware Rev', m.firmware_rev],
+                ['sysObjectID', m.sys_object_id],
+                ['Inventory Source', m.inventory_source],
+            ]) + (chassis.length ? '<div class="dm-section">Physical entities</div>' + this.dmTable([
+                {key:'class', label:'Class'}, {key:'name', label:'Name'},
+                {key:'model', label:'Model'}, {key:'serial', label:'Serial'},
+                {key:'hardware_rev', label:'HW Rev'}, {key:'firmware_rev', label:'FW Rev'},
+                {key:'software_rev', label:'SW Rev'}, {key:'descr', label:'Description'},
+            ], chassis) : '')},
+            { id: 'discovery', label: 'Discovery', html: this.dmKV([
+                ['Method', m.discovered_via],
+                ['Credential', m.credential_used],
+                ['Discovered At', m.discovered_at],
+                ['Duration (ms)', m.discovery_duration_ms == null ? '' : Math.round(m.discovery_duration_ms)],
+                ['Crawl Depth', m.depth],
+                ['Interfaces', counts.interfaces],
+                ['Neighbors', counts.neighbors],
+                ['ARP Entries', counts.arp_entries],
+            ]) + ((m.discovery_errors && m.discovery_errors.length)
+                ? '<div style="margin-top:10px">' +
+                  m.discovery_errors.map(e => `<div class="dm-err">${this.dmEsc(e)}</div>`).join('') +
+                  '</div>' : '')},
+            { id: 'interfaces', label: 'Interfaces', count: ifaces.length, filter: true, html: this.dmTable([
+                {key:'name', label:'Name'}, {key:'if_index', label:'Index'},
+                {key:'alias', label:'Alias'}, {key:'ip_address', label:'IP'},
+                {key:'mac_address', label:'MAC'}, {key:'speed_mbps', label:'Mbps'},
+                {key:'mtu', label:'MTU'}, {key:'status', label:'Status'},
+            ], ifaces)},
+            { id: 'neighbors', label: 'Neighbors', count: neighbors.length, filter: true, html: this.dmTable([
+                {key:'local_interface', label:'Local If'}, {key:'remote_device', label:'Remote Device'},
+                {key:'remote_interface', label:'Remote If'}, {key:'remote_ip', label:'Remote IP'},
+                {key:'remote_platform', label:'Platform'}, {key:'protocol', label:'Proto'},
+            ], neighbors)},
+            { id: 'arp', label: 'ARP', count: arpRows.length, filter: true, html: this.dmTable([
+                {key:'mac', label:'MAC'}, {key:'ip', label:'IP'},
+            ], arpRows)},
+        ];
+
+        // Second-pass (full collection) artifacts, read from the device
+        // folder on demand so map.json stays small.
+        if (ssh.inventory_file) {
+            panes.push({ id: 'inventory', label: 'Inventory', lazy: 'inventory',
+                         html: '<div class="dm-empty">Loading inventory...</div>' });
+        }
+        if (ssh.mac_table_file) {
+            panes.push({ id: 'mactable', label: 'MAC Table', lazy: 'mactable',
+                         count: ssh.mac_table_entries,
+                         html: '<div class="dm-empty">Loading MAC table...</div>' });
+        }
+        if (ssh.config_file) {
+            panes.push({ id: 'config', label: 'Config', lazy: 'config',
+                         html: '<div class="dm-empty">Loading config...</div>' });
+        }
+        if (enr.collected_at) {
+            panes.push({ id: 'collection', label: 'Collection', html: this.dmCollection(enr) });
+        }
+
+        const tabs = document.getElementById('dm-tabs');
+        const body = document.getElementById('dm-body');
+        tabs.innerHTML = panes.map((p, i) =>
+            `<button class="dm-tab${i === 0 ? ' active' : ''}" data-pane="${p.id}">${this.dmEsc(p.label)}` +
+            (p.count !== undefined ? ` <span class="dm-count">${p.count}</span>` : '') + `</button>`
+        ).join('');
+        body.innerHTML = panes.map((p, i) =>
+            `<div class="dm-pane${i === 0 ? ' active' : ''}" data-pane="${p.id}"` +
+            (p.lazy ? ` data-lazy="${p.lazy}"` : '') + '>' +
+            (p.filter && p.count ? `<input class="dm-filter" data-for="${p.id}" placeholder="Filter ${this.dmEsc(p.label.toLowerCase())}...">` : '') +
+            p.html + '</div>'
+        ).join('');
+
+        tabs.querySelectorAll('.dm-tab').forEach(btn => {
+            btn.onclick = () => {
+                tabs.querySelectorAll('.dm-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                body.querySelectorAll('.dm-pane').forEach(p =>
+                    p.classList.toggle('active', p.dataset.pane === btn.dataset.pane));
+                const pane = body.querySelector(`.dm-pane[data-pane="${btn.dataset.pane}"]`);
+                if (pane && pane.dataset.lazy && !pane.dataset.loaded) {
+                    pane.dataset.loaded = '1';
+                    if (pane.dataset.lazy === 'mactable') {
+                        this.dmLoadMacTable(pane, m.device_dir || '');
+                    } else {
+                        this.dmLoadArtifact(pane, m.device_dir || '', pane.dataset.lazy);
+                    }
+                }
+            };
+        });
+
+        // Client-side row filter - substring match across the whole row.
+        body.querySelectorAll('.dm-filter').forEach(inp => {
+            inp.oninput = () => {
+                const q = inp.value.toLowerCase();
+                const pane = body.querySelector(`.dm-pane[data-pane="${inp.dataset.for}"]`);
+                pane.querySelectorAll('tbody tr').forEach(tr => {
+                    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            };
+        });
+
+        document.getElementById('device-modal').classList.add('active');
+    },
+
+    hideNodeInfo() {
+        document.getElementById('device-modal').classList.remove('active');
+    },
+
+    showEdgeInfo(data) {
+        const panel = document.getElementById('info-panel');
+        const content = document.getElementById('info-content');
+        const interfaces = (data.label || 'N/A').replace(/\n/g, '<br>');
+        const count = data.connectionCount || '';
+        const countStr = count > 1 ? ` (${count} links)` : '';
+        content.innerHTML = `
+            <div class="info-item"><strong>Source:</strong> ${data.source}</div>
+            <div class="info-item"><strong>Target:</strong> ${data.target}</div>
+            <div class="info-item"><strong>Interfaces${countStr}:</strong><br>${interfaces}</div>
+        `;
+        panel.querySelector('h4').textContent = 'Connection Information';
+        panel.classList.add('active');
+    },
+
+    hideInfoPanel() {
+        document.getElementById('info-panel').classList.remove('active');
+    },
+
+    updateStats() {
+        document.getElementById('node-count').textContent = this.cy.nodes().length;
+        document.getElementById('edge-count').textContent = this.cy.edges().length;
+    },
+
+    exportPositions() {
+        const positions = {};
+        this.cy.nodes().forEach(node => {
+            const pos = node.position();
+            positions[node.id()] = { x: pos.x, y: pos.y };
+        });
+        return JSON.stringify(positions);
+    },
+
+    restorePositions(positionsJson) {
+        try {
+            const positions = JSON.parse(positionsJson);
+            this.cy.nodes().forEach(node => {
+                const pos = positions[node.id()];
+                if (pos) node.position(pos);
+            });
+            this.cy.fit(null, 30);
+        } catch (e) {
+            DebugLog.error('restorePositions error: ' + e.message);
+        }
+    },
+
+    setTheme(themeJson) {
+        try {
+            const theme = JSON.parse(themeJson);
+            const root = document.documentElement;
+            for (const [key, value] of Object.entries(theme)) {
+                root.style.setProperty(key, value);
+            }
+            if (this.cy) this.cy.style(this.getStyles());
+            document.body.style.background = theme['--bg-primary'] || '#1a1a2e';
+        } catch (e) {
+            DebugLog.error('setTheme error: ' + e.message);
+        }
+    },
+
+    showControls(show = true) {
+        document.getElementById('controls').classList.toggle('hidden', !show);
+    },
+
+    showLoading() {
+        document.getElementById('loading').classList.remove('hidden');
+    },
+
+    hideLoading() {
+        document.getElementById('loading').classList.add('hidden');
+    },
+
+    exportPNG() {
+    if (!this.cy) return null;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#1a1a2e';
+    return this.cy.png({ output: 'base64', bg: bg, full: true, scale: 2 });
+},
+
+getSelectedNodes() {
+    if (!this.cy) return '[]';
+    return JSON.stringify(this.cy.nodes(':selected').map(n => n.id()));
+}
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    TopologyViewer.init();
+});
+
+window.TopologyViewer = TopologyViewer;
+window.DebugLog = DebugLog;
+</script>
+<script>
+/* ── Netlapse addon ─────────────────────────────────────────────────────
+ * Ported from Secure Cartography's topology_viewer.html. The SC2 code above
+ * is unchanged apart from dropping the qrc:// QWebChannel script and the
+ * Test Load button; the host
+ * page (js/views/topology.js) drives it through window.TopologyViewer and
+ * installs a fetch-based TopologyViewer.bridge for the node dialog's
+ * Config / MAC Table / Inventory tabs.
+ *
+ * This block only adds: link-state and diff styling, link state in the
+ * edge info panel, node focus (zoom + dim) for the host's device list, and
+ * site grouping (compound boxes, per-site hierarchical layout), and the device
+ * dialog filled from netlapse (bridge.getNodeDetail) with per-capture dates,
+ * and Copy / CSV / Download on the dialog's tables and raw captures.
+ */
+(function () {
+    const baseStyles = TopologyViewer.getStyles.bind(TopologyViewer);
+    TopologyViewer.getStyles = function () {
+        const css = getComputedStyle(document.documentElement);
+        const v = (k, d) => css.getPropertyValue(k).trim() || d;
+        const warn = v('--nl-warn', '#ea580c');
+        const add = v('--nl-add', '#16a34a');
+        const del = v('--nl-del', '#dc2626');
+        const chg = v('--nl-chg', '#d97706');
+        return baseStyles().concat([
+            { selector: 'edge.nl-one_sided', style: { 'line-style': 'dashed', 'line-color': warn, 'width': 2.5 } },
+            { selector: 'edge.nl-unverified', style: { 'line-style': 'dotted' } },
+            { selector: 'edge.nl-unmanaged', style: { 'line-style': 'dotted', 'opacity': 0.75 } },
+            { selector: 'edge.nl-added', style: { 'line-color': add, 'width': 4, 'line-style': 'solid' } },
+            { selector: 'edge.nl-removed', style: { 'line-color': del, 'width': 3, 'line-style': 'dashed', 'opacity': 0.6 } },
+            { selector: 'edge.nl-changed', style: { 'line-color': chg, 'width': 4 } },
+            { selector: 'node.nl-added', style: { 'border-color': add, 'border-width': 4 } },
+            { selector: 'node.nl-removed', style: { 'border-color': del, 'border-width': 4, 'border-style': 'dashed', 'opacity': 0.55 } },
+            { selector: 'node.nl-nolldp', style: { 'border-style': 'dashed' } },
+            { selector: '.nl-faded', style: { 'opacity': 0.15 } },
+            { selector: '.nl-dim', style: { 'opacity': 0.08 } },
+            { selector: 'node.nl-site', style: {
+                'shape': 'round-rectangle',
+                'background-color': v('--bg-surface', '#ffffff'),
+                'background-opacity': 0.55,
+                'background-image': 'none',
+                'border-width': 1.5,
+                'border-style': 'solid',
+                'border-color': v('--border-color', '#cbd5e1'),
+                'border-opacity': 1,
+                'opacity': 1,
+                'label': 'data(label)',
+                'text-valign': 'top',
+                'text-halign': 'center',
+                'text-margin-y': -8,
+                'font-size': 26,
+                'font-weight': 700,
+                'color': v('--text-secondary', '#64748b'),
+                'text-background-opacity': 0,
+                'padding': '36px',
+            } },
+            { selector: 'node.nl-focus', style: { 'border-color': v('--accent-primary', '#2563eb'), 'border-width': 6 } },
+        ]);
+    };
+
+    // Host sets per-edge {cls, lines} and per-node classes after loadTopology.
+    TopologyViewer.nlDecorate = function (edges, nodes) {
+        if (!this.cy) return;
+        this.cy.batch(() => {
+            this.cy.elements().removeClass(
+                'nl-one_sided nl-unverified nl-unmanaged nl-added nl-removed nl-changed nl-nolldp nl-faded nl-dim nl-focus');
+            for (const [id, info] of Object.entries(edges || {})) {
+                const e = this.cy.getElementById(id);
+                if (!e || !e.length) continue;
+                if (info.cls) e.addClass(info.cls);
+                e.data('nlLines', info.lines || []);
+            }
+            for (const [id, cls] of Object.entries(nodes || {})) {
+                const n = this.cy.getElementById(id);
+                if (n && n.length && cls) n.addClass(cls);
+            }
+        });
+    };
+
+    // Focus: zoom to a node and dim everything outside its neighborhood.
+    // Driven by the host's device list; a canvas node tap reports back
+    // through bridge.onNodeSelected (SC2's existing hook), a background tap
+    // clears it and reports through bridge.onFocusCleared.
+    TopologyViewer.nlFocus = function (id, opts = {}) {
+        if (!this.cy) return false;
+        const n = this.cy.getElementById(id);
+        if (!n || !n.length) return false;
+        const hood = n.closedNeighborhood();
+        this.cy.batch(() => {
+            this.cy.elements().removeClass('nl-dim nl-focus');
+            // Never dim a site box: compound opacity would dim its children.
+            this.cy.elements().not(hood).not('.nl-site').addClass('nl-dim');
+            n.addClass('nl-focus');
+            this.cy.elements(':selected').unselect();
+            n.select();
+        });
+        if (opts.zoom !== false) {
+            // Fit the neighborhood when it fits at a readable zoom. A device
+            // with neighbors in another site, or a core with 90 of them, has a
+            // neighborhood spanning most of the map; fitting that looked like
+            // "no zoom". Then center on the device at the readable floor and
+            // let the dimming show where the neighbors are.
+            const cy = this.cy, PAD = 80, MIN_Z = 0.65, MAX_Z = 1.6;
+            const bb = hood.boundingBox({ includeLabels: true });
+            const fitZ = Math.min((cy.width() - 2 * PAD) / Math.max(bb.w, 1),
+                                  (cy.height() - 2 * PAD) / Math.max(bb.h, 1));
+            cy.stop(true, false);   // rapid clicks: don't queue a backlog of zooms
+            if (fitZ >= MIN_Z) {
+                const z = Math.min(fitZ, MAX_Z);
+                cy.animate({ zoom: z, center: { eles: hood } }, { duration: 350 });
+            } else {
+                cy.animate({ zoom: MIN_Z, center: { eles: n } }, { duration: 350 });
+            }
+        }
+        return true;
+    };
+
+    // ── site grouping ────────────────────────────────────────────────
+    // Compound parent per site. Hierarchical layouts run per site and the
+    // sites are packed in rows, so each site is its own picture and an
+    // inter-site link is a line between boxes. Force layouts (cose) handle
+    // compounds natively and are left to cytoscape.
+    const SITE_PREFIX = 'nlsite::';
+    TopologyViewer.nlGroups = null;
+
+    TopologyViewer.nlUngroup = function () {
+        if (!this.cy) return;
+        const parents = this.cy.nodes('.nl-site');
+        if (!parents.length) return;
+        this.cy.batch(() => {
+            parents.children().move({ parent: null });
+            parents.remove();
+        });
+    };
+
+    // groups: { nodeId: groupKey }, labels: { groupKey: label }. null = off.
+    TopologyViewer.nlGroupBySite = function (groups, labels) {
+        if (!this.cy) return;
+        this.nlUngroup();
+        this.nlGroups = groups && Object.keys(groups).length ? { groups, labels: labels || {} } : null;
+        if (!this.nlGroups) { this.applyLayout(this.lastLayout || 'dagre'); return; }
+        const keys = [...new Set(Object.values(groups))];
+        this.cy.batch(() => {
+            for (const k of keys) {
+                this.cy.add({ group: 'nodes', classes: 'nl-site', data: {
+                    id: SITE_PREFIX + k, label: this.nlGroups.labels[k] || k, nlGroup: true,
+                    discovered: true, vendorFill: 'transparent', vendorColor: 'transparent', icon: 'none',
+                } });
+            }
+            for (const [id, k] of Object.entries(groups)) {
+                const n = this.cy.getElementById(id);
+                if (n && n.length && !n.isParent()) n.move({ parent: SITE_PREFIX + k });
+            }
+        });
+        this.applyLayout('dagre');
+        this.updateStats();
+    };
+
+    TopologyViewer.nlLayoutGroups = function (algorithm) {
+        const cy = this.cy;
+        // loadTopology starts an animated whole-graph dagre; left running it
+        // would keep moving nodes after the per-site positions are set.
+        cy.stop(true, false);
+        cy.nodes().stop(true, false);
+        const hasDagre = typeof cytoscape !== 'undefined' && cytoscape('layout', 'dagre');
+        const blocks = [];
+        const layoutSet = (kids) => {
+            if (kids.length > 1) {
+                const sub = kids.union(kids.edgesWith(kids));
+                sub.layout(hasDagre
+                    ? { name: 'dagre', rankDir: algorithm === 'dagre-lr' ? 'LR' : 'TB',
+                        nodeSep: 50, rankSep: 90, edgeSep: 10, fit: false, animate: false }
+                    : { name: 'breadthfirst', directed: false, spacingFactor: 1.2, fit: false, animate: false }
+                ).run();
+            } else if (kids.length === 1) {
+                kids.position({ x: 0, y: 0 });
+            }
+            if (kids.length) blocks.push({ kids, bb: kids.boundingBox({ includeLabels: true }) });
+        };
+        cy.nodes('.nl-site').forEach(p => { layoutSet(p.children()); blocks[blocks.length - 1].key = p.id(); });
+        layoutSet(cy.nodes().filter(n => !n.isParent() && !n.isChild()));
+        if (blocks.length && !blocks[blocks.length - 1].key) blocks[blocks.length - 1].key = '';
+
+        // Order: sites joined by links sit next to each other (iad1 beside
+        // iad2), isolated sites after. Within a connected group, walk out from
+        // the largest site. Then pack in rows about 1.6x as wide as the square
+        // root of the total area.
+        const GAP = 160;
+        const area = b => b.bb.w * b.bb.h;
+        const adj = new Map(blocks.map(b => [b.key, new Map()]));
+        cy.edges().forEach(e => {
+            const a = e.source().parent(), b = e.target().parent();
+            const ka = a.length ? a.id() : '', kb = b.length ? b.id() : '';
+            if (ka === kb || !adj.has(ka) || !adj.has(kb)) return;
+            adj.get(ka).set(kb, (adj.get(ka).get(kb) || 0) + 1);
+            adj.get(kb).set(ka, (adj.get(kb).get(ka) || 0) + 1);
+        });
+        const byKey = new Map(blocks.map(b => [b.key, b]));
+        const seen = new Set(), comps = [];
+        for (const start of [...blocks].sort((a, b) => area(b) - area(a))) {
+            if (seen.has(start.key)) continue;
+            const comp = [], queue = [start.key];
+            seen.add(start.key);
+            while (queue.length) {
+                const k = queue.shift();
+                comp.push(byKey.get(k));
+                const next = [...adj.get(k).entries()].sort((x, y) => y[1] - x[1]).map(x => x[0]);
+                for (const n of next) if (!seen.has(n)) { seen.add(n); queue.push(n); }
+            }
+            comps.push(comp);
+        }
+        comps.sort((a, b) => (b.length > 1) - (a.length > 1) ||
+                             b.reduce((t, x) => t + area(x), 0) - a.reduce((t, x) => t + area(x), 0));
+        blocks.splice(0, blocks.length, ...comps.flat());
+        const total = blocks.reduce((t, b) => t + (b.bb.w + GAP) * (b.bb.h + GAP), 0);
+        const rowMax = Math.max(Math.sqrt(total) * 1.6, ...blocks.map(b => b.bb.w));
+        let x = 0, y = 0, rowH = 0;
+        cy.batch(() => {
+            for (const b of blocks) {
+                if (x > 0 && x + b.bb.w > rowMax) { x = 0; y += rowH + GAP; rowH = 0; }
+                const dx = x - b.bb.x1, dy = y - b.bb.y1;
+                b.kids.forEach(n => { const p = n.position(); n.position({ x: p.x + dx, y: p.y + dy }); });
+                x += b.bb.w + GAP;
+                rowH = Math.max(rowH, b.bb.h);
+            }
+        });
+        cy.fit(undefined, 40);
+    };
+
+    const baseLayout = TopologyViewer.applyLayout.bind(TopologyViewer);
+    TopologyViewer.applyLayout = function (algorithm = 'dagre') {
+        if (this.cy && this.cy.nodes('.nl-site').length &&
+            ['dagre', 'dagre-lr', 'breadthfirst'].includes(algorithm)) {
+            this.lastLayout = algorithm;
+            return this.nlLayoutGroups(algorithm);
+        }
+        return baseLayout(algorithm);
+    };
+
+    // ── device dialog: filled from netlapse ──────────────────────────
+    // map.json carries only what the map needs. Opening a device asks the
+    // host (bridge.getNodeDetail) for the rest, read at the map's time, and
+    // re-renders the dialog with it. Every section says which capture it came
+    // from and when that capture ran, because captures have their own
+    // intervals and an as-of map mixes collection times.
+    const baseShowNodeInfo = TopologyViewer.showNodeInfo.bind(TopologyViewer);
+    // Captures that already have a home in the dialog; anything else the
+    // device has (bgp, ospf, routes, custom jobs) gets a raw, filterable tab.
+    const DIALOG_HOMED = new Set(['lldp', 'interfaces', 'arp', 'config', 'mac', 'inventory']);
+    const CAPTURE_LABEL = { bgp: 'BGP', ospf: 'OSPF', routes: 'Routes' };
+    const fmtWhen = iso => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString(); };
+
+    TopologyViewer.showNodeInfo = function (data) {
+        if (data && data.nlGroup) return;          // site boxes are not devices
+        baseShowNodeInfo(data);
+        if (data.nlDetail) { this.nlDecorateDialog(data, data.nlDetail); return; }
+        const m = data.metadata || {};
+        const b = this.bridge;
+        if (!m.device_dir || !b || !b.getNodeDetail) return;
+        const token = this._nlDialogToken = (this._nlDialogToken || 0) + 1;
+        const tabs = document.getElementById('dm-tabs');
+        tabs.insertAdjacentHTML('beforeend', '<span class="dm-count nl-loading" style="margin-left:auto;align-self:center">loading…</span>');
+        b.getNodeDetail(m.device_dir, (json) => {
+            if (token !== this._nlDialogToken) return;                       // another device opened since
+            if (!document.getElementById('device-modal').classList.contains('active')) return;
+            let res;
+            try { res = JSON.parse(json); } catch (e) { res = { ok: false, error: String(e) }; }
+            const loading = tabs.querySelector('.nl-loading');
+            if (!res.ok) { if (loading) loading.textContent = res.error || 'detail unavailable'; return; }
+            const p = res.patch || {};
+            const merged = Object.assign({}, data, {
+                vendor: p.vendor || data.vendor, serial: p.serial || data.serial,
+                model: p.model || data.model, os_version: p.os_version || data.os_version,
+            });
+            merged.metadata = Object.assign({}, m, p.metadata || {}, {
+                counts: Object.assign({}, m.counts || {}, (p.metadata || {}).counts || {}),
+            });
+            merged.nlDetail = res;
+            const active = (tabs.querySelector('.dm-tab.active') || {}).dataset;
+            baseShowNodeInfo(merged);
+            this.nlDecorateDialog(merged, res);
+            const btn = active && tabs.querySelector(`.dm-tab[data-pane="${active.pane}"]`);
+            if (btn) btn.click();
+        });
+    };
+
+    // ── copy / export in the device dialog ──────────────────────────
+    // Every data table gets Copy (aligned text, for tickets, chat and MOPs)
+    // and CSV; every raw capture gets Copy and Download. Both act on what is
+    // shown, so a filter narrows the export too. Panes fill asynchronously
+    // (lazy tabs, the detail re-render), so a MutationObserver adds the
+    // toolbar whenever a table or <pre> appears.
+
+    // navigator.clipboard needs a secure context; netlapse is often served
+    // over plain http on a jump host. The fallback hands the text to a copy
+    // event instead of a hidden <textarea>: a textarea holding a 30k-line
+    // config has to be laid out and selected, which stalls the page for
+    // seconds. clipboardData.setData touches no DOM at all.
+    function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise((resolve, reject) => {
+            let done = false;
+            const onCopy = (e) => {
+                e.clipboardData.setData('text/plain', text);
+                e.preventDefault();
+                done = true;
+            };
+            document.addEventListener('copy', onCopy, { once: true });
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+            document.removeEventListener('copy', onCopy);
+            ok && done ? resolve() : reject(new Error('copy blocked'));
+        });
+    }
+
+    function download(name, text, mime) {
+        const url = URL.createObjectURL(new Blob([text], { type: mime }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function fileBase(pane) {
+        const dev = (document.getElementById('dm-title').textContent || 'device').trim();
+        return `${dev}_${pane.dataset.pane || 'data'}`.replace(/[^A-Za-z0-9._-]+/g, '_');
+    }
+
+    function tableData(table) {
+        const head = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+        const rows = [...table.querySelectorAll('tbody tr')]
+            .filter(tr => tr.style.display !== 'none')
+            .map(tr => [...tr.children].map(td => td.textContent.trim()));
+        return { head, rows };
+    }
+
+    function asCsv({ head, rows }) {
+        const cell = v => /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        return [head, ...rows].map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+    }
+
+    // Fixed-width columns, two spaces apart, dashed rule under the header.
+    // Empty columns are dropped so a sparse table stays readable.
+    function asText({ head, rows }) {
+        const keep = head.map((_, i) => rows.some(r => (r[i] || '') !== ''));
+        const h = head.filter((_, i) => keep[i]);
+        const rs = rows.map(r => r.filter((_, i) => keep[i]));
+        const w = h.map((t, i) => Math.max(t.length, ...rs.map(r => (r[i] || '').length)));
+        const line = r => r.map((v, i) => (v || '').padEnd(w[i])).join('  ').trimEnd();
+        return [line(h), w.map(n => '-'.repeat(n)).join('  '), ...rs.map(line)].join('\n') + '\n';
+    }
+
+    function flash(btn, text) {
+        const was = btn.textContent;
+        btn.textContent = text;
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 1300);
+    }
+
+    function addTableTools(pane, table) {
+        if (table.dataset.nlTools || !table.querySelector('thead')) return;   // KV tables have no header
+        table.dataset.nlTools = '1';
+        const bar = document.createElement('div');
+        bar.className = 'nl-tools';
+        bar.innerHTML = '<button type="button" data-act="copy" title="Copy the shown rows as aligned text">Copy</button>' +
+                        '<button type="button" data-act="csv" title="Download the shown rows as CSV">CSV</button>';
+        table.parentNode.insertBefore(bar, table);
+        bar.onclick = (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const d = tableData(table);
+            if (btn.dataset.act === 'csv') {
+                download(fileBase(pane) + '.csv', asCsv(d), 'text/csv');
+                flash(btn, `${d.rows.length} rows`);
+            } else {
+                bigCopy(btn, asText(d), `${d.rows.length} rows`);
+            }
+        };
+    }
+
+    function addPreTools(pane, pre) {
+        if (pre.dataset.nlTools) return;
+        pre.dataset.nlTools = '1';
+        const bar = document.createElement('div');
+        bar.className = 'nl-tools';
+        bar.innerHTML = '<button type="button" data-act="copy" title="Copy the shown lines">Copy</button>' +
+                        '<button type="button" data-act="txt" title="Download the shown lines">Download</button>';
+        pre.parentNode.insertBefore(bar, pre);
+        bar.onclick = (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const text = pre.textContent;
+            const n = text ? text.replace(/\n$/, '').split('\n').length : 0;
+            if (btn.dataset.act === 'txt') {
+                download(fileBase(pane) + '.txt', text.endsWith('\n') ? text : text + '\n', 'text/plain');
+                flash(btn, `${n} lines`);
+            } else {
+                bigCopy(btn, text, `${n} lines`);
+            }
+        };
+    }
+
+    // Copy with guard rails for big text. The page can't draw a spinner
+    // while the copy itself blocks, so: show "Copying…" first (a short
+    // timeout lets it paint; the click's user activation outlasts it), and
+    // above BIG_COPY ask once, since a multi-MB clipboard write can stall the
+    // browser on some machines (clipboard managers, endpoint agents) where
+    // Download does not. The console line says where the time went.
+    const BIG_COPY = 512 * 1024;
+    function bigCopy(btn, text, what) {
+        const size = new Blob([text]).size;
+        const mb = (size / 1048576).toFixed(1);
+        if (size > BIG_COPY && btn.dataset.armed !== '1') {
+            btn.dataset.armed = '1';
+            btn.textContent = `Copy ${mb} MB?`;
+            btn.title = 'Large copies can freeze the browser for a while; Download is instant. Click again to copy.';
+            clearTimeout(btn._nlDisarm);
+            btn._nlDisarm = setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'Copy'; }, 5000);
+            return;
+        }
+        clearTimeout(btn._nlDisarm);
+        btn.dataset.armed = '';
+        btn.textContent = 'Copying…';
+        btn.disabled = true;
+        // Big copies: a "please wait" over the dialog. It has to be on screen
+        // before the copy blocks, so wait for two animation frames (the
+        // second runs after the first has painted) before starting.
+        const box = document.getElementById('dm-box');
+        let wait = null;
+        if (size > BIG_COPY && box) {
+            wait = document.createElement('div');
+            wait.className = 'nl-wait';
+            wait.innerHTML = `<div>Please wait — copying ${mb} MB to the clipboard…` +
+                             '<small>The page may stop responding until it finishes.</small></div>';
+            box.appendChild(wait);
+        }
+        const finish = (label) => {
+            if (wait) wait.remove();
+            btn.disabled = false;
+            btn.textContent = 'Copy';
+            flash(btn, label);
+        };
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+            const t0 = performance.now();
+            copyText(text).then(() => {
+                console.info(`[netlapse] copied ${what} (${size} bytes) in ${Math.round(performance.now() - t0)} ms`);
+                finish(`Copied ${what.split(' ')[0]}`);
+            }, (err) => {
+                console.warn(`[netlapse] copy failed after ${Math.round(performance.now() - t0)} ms`, err);
+                finish('Blocked');
+            });
+        }, 0)));
+    }
+
+    function scanDialog() {
+        document.querySelectorAll('#dm-body .dm-pane').forEach(pane => {
+            pane.querySelectorAll('table.dm-table').forEach(t => addTableTools(pane, t));
+            pane.querySelectorAll('pre.dm-pre').forEach(p => addPreTools(pane, p));
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const body = document.getElementById('dm-body');
+        if (!body) return;
+        let queued = false;
+        new MutationObserver(() => {
+            if (queued) return;
+            queued = true;
+            requestAnimationFrame(() => { queued = false; scanDialog(); });
+        }).observe(body, { childList: true, subtree: true });
+    });
+
+    TopologyViewer.nlDecorateDialog = function (data, res) {
+        const esc = v => this.dmEsc(v);
+        const m = data.metadata || {};
+        const tabs = document.getElementById('dm-tabs');
+        const body = document.getElementById('dm-body');
+        const pane = id => body.querySelector(`.dm-pane[data-pane="${id}"]`);
+        const src = res.sources || {};
+        const dcim = res.dcim || {};
+        const caption = (id, s, fallback) => {
+            const el = pane(id);
+            if (!el) return;
+            const text = s ? `From the ${s.capture_type} capture, collected ${fmtWhen(s.collected_at)}`
+                           : fallback;
+            if (text) el.insertAdjacentHTML('afterbegin', `<div class="dm-meta nl-src" style="margin:0 0 8px">${esc(text)}</div>`);
+        };
+
+        // Overview / Hardware: DCIM facts the SC2 dialog has no row for.
+        // dmKV prints "No data" for an all-empty list, so only add non-empty.
+        const addKV = (id, pairs) => {
+            const el = pane(id);
+            const rows = pairs.filter(p => p[1] !== undefined && p[1] !== null && p[1] !== '');
+            if (el && rows.length) el.insertAdjacentHTML('beforeend', this.dmKV(rows));
+        };
+        addKV('overview', [['Site', dcim.site], ['Role', dcim.role], ['DCIM status', dcim.status],
+                           ['Description', m.description]]);
+        addKV('hardware', [['Uptime', m.uptime_text], ['Asset tag', m.asset_tag]]);
+        caption('hardware', src.hardware, (data.serial ? 'Serial from DCIM. ' : '') +
+            'No version or inventory capture for this device; add one to fill model and OS version.');
+        caption('interfaces', src.interfaces, 'No interfaces capture for this device at this time.');
+        caption('neighbors', src.neighbors, '');
+
+        // ARP: the SC2 pane keys by MAC, which folds every IP behind one
+        // router MAC into a single row. Show the parsed table instead.
+        const arp = res.arp || [];
+        const ap = pane('arp');
+        if (ap) {
+            ap.innerHTML = (arp.length ? '<input class="dm-filter" data-for="arp" placeholder="Filter arp...">' : '') +
+                this.dmTable([
+                    { key: 'ip', label: 'IP' }, { key: 'mac', label: 'MAC' },
+                    { key: 'interface', label: 'Interface' }, { key: 'age', label: 'Age' },
+                    { key: 'vrf', label: 'VRF' },
+                ], arp);
+            caption('arp', src.arp, 'No ARP capture for this device at this time.');
+            const cnt = tabs.querySelector('.dm-tab[data-pane="arp"] .dm-count');
+            if (cnt) cnt.textContent = arp.length;
+            const f = ap.querySelector('.dm-filter');
+            if (f) f.oninput = () => {
+                const q = f.value.toLowerCase();
+                ap.querySelectorAll('tbody tr').forEach(tr => {
+                    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            };
+        }
+
+        // Raw tabs for every other capture the device has, loaded on demand.
+        const caps = res.captures || [];
+        for (const c of caps) {
+            if (DIALOG_HOMED.has(c.capture_type) || pane(c.capture_type)) continue;
+            const id = c.capture_type;
+            tabs.insertAdjacentHTML('beforeend',
+                `<button class="dm-tab" data-pane="${esc(id)}">${esc(CAPTURE_LABEL[id] || id)}` +
+                (c.records != null ? ` <span class="dm-count">${c.records}</span>` : '') + '</button>');
+            body.insertAdjacentHTML('beforeend',
+                `<div class="dm-pane" data-pane="${esc(id)}"><div class="dm-empty">Loading ${esc(id)}...</div></div>`);
+            const btn = tabs.querySelector(`.dm-tab[data-pane="${CSS.escape(id)}"]`);
+            btn.onclick = () => {
+                tabs.querySelectorAll('.dm-tab').forEach(x => x.classList.toggle('active', x === btn));
+                body.querySelectorAll('.dm-pane').forEach(x => x.classList.toggle('active', x.dataset.pane === id));
+                const el = pane(id);
+                if (!el.dataset.loaded) { el.dataset.loaded = '1'; this.dmLoadArtifact(el, m.device_dir || '', id); }
+            };
+        }
+
+        // Collection: one row per capture with its own time.
+        const col = pane('collection');
+        if (col) {
+            const rows = caps.map(c => ({
+                capture: c.capture_type, collected: fmtWhen(c.collected_at),
+                records: c.records == null ? 'raw only' : c.records,
+                template: c.template, command: c.command,
+            }));
+            col.innerHTML = this.dmKV([
+                ['Map as of', res.as_of ? fmtWhen(res.as_of) : 'latest'],
+                ['Last collection', fmtWhen(dcim.last_collected_at)],
+                ['Last result', dcim.last_collection_status],
+                ['Credential', dcim.credential],
+            ]) + '<div class="dm-section">Captures</div>' + this.dmTable([
+                { key: 'capture', label: 'Capture' }, { key: 'collected', label: 'Collected' },
+                { key: 'records', label: 'Records' }, { key: 'template', label: 'Template' },
+                { key: 'command', label: 'Command' },
+            ], rows);
+        }
+    };
+    const baseUpdateStats = TopologyViewer.updateStats.bind(TopologyViewer);
+    TopologyViewer.updateStats = function () {
+        baseUpdateStats();
+        if (this.cy) document.getElementById('node-count').textContent = this.cy.nodes('[!nlGroup]').length;
+    };
+
+    TopologyViewer.nlClearFocus = function () {
+        if (!this.cy) return;
+        this.cy.elements().removeClass('nl-dim nl-focus');
+        this.cy.elements(':selected').unselect();
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Runs after the viewer's own DOMContentLoaded init (registered first).
+        const cy = TopologyViewer.cy;
+        if (!cy) return;
+        // "/" inside the canvas jumps to the host's search box.
+        document.addEventListener('keydown', (e) => {
+            const b = TopologyViewer.bridge;
+            if (e.key === '/' && b && b.onSlash) { e.preventDefault(); b.onSlash(); }
+        });
+        cy.on('tap', (evt) => {
+            if (evt.target !== cy) return;
+            TopologyViewer.nlClearFocus();
+            const b = TopologyViewer.bridge;
+            if (b && b.onFocusCleared) b.onFocusCleared();
+        });
+    });
+
+    const baseEdgeInfo = TopologyViewer.showEdgeInfo.bind(TopologyViewer);
+    TopologyViewer.showEdgeInfo = function (data) {
+        baseEdgeInfo(data);
+        const lines = data.nlLines || [];
+        if (!lines.length) return;
+        const content = document.getElementById('info-content');
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+            c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        content.insertAdjacentHTML('beforeend',
+            '<div class="info-item"><strong>LLDP:</strong><br>' +
+            lines.map(esc).join('<br>') + '</div>');
+    };
+})();
+</script>
+</body>
+</html>
