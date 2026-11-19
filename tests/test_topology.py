@@ -366,3 +366,15 @@ def test_dialog_row_normalizers():
     junos_if = {"INTERFACE": "xe-0/0/1.0", "LOCAL": "192.0.2.9/31", "LINK_STATUS": "up", "ADMIN_STATE": "up"}
     assert _iface_row(junos_if)["ip_address"] == "192.0.2.9/31"
     assert _arp_row({"IP_ADDRESS": "192.0.2.7", "MAC_ADDRESS": "02aa.0000.0007", "INTERFACE": "Vlan10", "AGE": "0"})["interface"] == "Vlan10"
+
+
+def test_dialog_rows_status_and_terse_templates():
+    from netlapse.api.topology import _iface_row
+    eos_status = {"PORT": "Et49/1", "NAME": "INT::spine1:Et1", "STATUS": "connected", "VLAN_ID": "routed",
+                  "DUPLEX": "full", "SPEED": "100G", "TYPE": "100GBASE-SR4"}
+    r = _iface_row(eos_status)
+    assert (r["name"], r["alias"], r["status"], r["speed_mbps"]) == ("Et49/1", "INT::spine1:Et1", "connected", "100G")
+    terse = {"INTERFACE": "et-0/0/1.0", "ADMIN_STATE": "up", "LINK_STATE": "down", "PROTO": "inet",
+             "LOCAL": "192.0.2.9/31", "REMOTE": ""}
+    r = _iface_row(terse)
+    assert (r["status"], r["ip_address"], r["alias"]) == ("up/down", "192.0.2.9/31", "")

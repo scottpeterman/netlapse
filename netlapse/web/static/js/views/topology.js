@@ -56,6 +56,63 @@ let _keyHandler = null;
 let _siteCleanup = null;
 let _siteNames = {};     // slug → display name
 let _groupSites = (() => { try { return localStorage.getItem('netlapse.topology.group') !== 'off'; } catch (e) { return true; } })();
+let _layoutDirty = false;  // positions moved since the last save/restore
+
+
+// ── saved layouts (browser localStorage) ─────────────────────────────
+// One saved layout per site selection and grouping mode: a grouped map and
+// a flat one place the same devices differently. Map and Compare share it,
+// so a Compare draws in the layout you arranged. Stored per browser.
+
+const LAYOUT_PREFIX = 'netlapse.topology.layout:';
+
+function layoutKey() {
+    const sites = _sites.length ? [..._sites].sort().join(',') : '*';
+    return `${LAYOUT_PREFIX}${sites}:${_groupSites ? 'grouped' : 'flat'}`;
+}
+
+function readLayout() {
+    try {
+        const raw = localStorage.getItem(layoutKey());
+        if (!raw) return null;
+        const j = JSON.parse(raw);
+        return j && j.positions ? j : null;
+    } catch (e) { return null; }
+}
+
+function writeLayout(positions) {
+    const body = JSON.stringify({ v: 1, saved_at: new Date().toISOString(), positions });
+    localStorage.setItem(layoutKey(), body);   // throws when storage is off or full
+}
+
+function clearLayout() {
+    try { localStorage.removeItem(layoutKey()); } catch (e) { /* storage off */ }
+}
+
+function setLayoutDirty(d) {
+    _layoutDirty = d;
+    const btn = document.getElementById('topo-save-layout');
+    if (btn) btn.textContent = d ? 'Save layout •' : 'Save layout';
+}
+
+function layoutNote(text) {
+    const el = document.getElementById('topo-layout-note');
+    if (el) el.textContent = text || '';
+}
+
+// After loadTopology + grouping: put the saved positions back, if any.
+function restoreLayout(tv) {
+    const saved = readLayout();
+    document.getElementById('topo-reset-layout').disabled = !saved;
+    setLayoutDirty(false);
+    if (!saved) { layoutNote(''); return; }
+    const r = tv.nlSetPositions(saved.positions);
+    if (!r) { layoutNote(''); return; }
+    const when = new Date(saved.saved_at);
+    const tag = isNaN(when) ? 'Saved layout' : `Saved layout · ${when.toLocaleDateString()}`;
+    layoutNote(r.added ? `${tag} · ${r.added} not in it, placed near neighbors` : tag);
+    if (r.added) setLayoutDirty(true);
+}
 
 
 // ── hash ↔ state ─────────────────────────────────────────────────────
@@ -157,6 +214,9 @@ export function render() {
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-sm" data-layout="dagre">Hierarchical</button>
                 <button class="btn btn-sm" data-layout="cose">Force</button>
+                <button class="btn btn-sm" id="topo-save-layout" title="Save device positions for this site selection (this browser)">Save layout</button>
+                <button class="btn btn-sm" id="topo-reset-layout" title="Forget the saved layout and re-run Hierarchical" disabled>Reset layout</button>
+                <span id="topo-layout-note" class="fs-11 text-faint"></span>
                 <button class="btn btn-sm" id="topo-fit">Fit</button>
                 <button class="btn btn-sm" id="topo-png">PNG</button>
                 <button class="btn btn-sm" id="topo-json" title="SC2-compatible map.json">map.json</button>
@@ -347,6 +407,7 @@ function wireControls() {
         // Regrouping re-creates the moved elements, so decorations go on again.
         const w = await _frameReady;
         applyGrouping(w.TopologyViewer, _last);
+        restoreLayout(w.TopologyViewer);
         const { edges, nodes } = _compare ? diffDecorations(_last) : mapDecorations(_last);
         w.TopologyViewer.nlDecorate(edges, nodes);
         if (_activeId) w.TopologyViewer.nlFocus(_activeId, { zoom: false });
@@ -354,7 +415,35 @@ function wireControls() {
     $('topo-refresh').addEventListener('click', load);
 
     document.querySelectorAll('[data-layout]').forEach(btn => btn.addEventListener('click', () =>
-        _frameReady && _frameReady.then(w => w.TopologyViewer.applyLayout(btn.dataset.layout))));
+        _frameReady && _frameReady.then(w => {
+            w.TopologyViewer.applyLayout(btn.dataset.layout);
+            setLayoutDirty(true);
+        })));
+
+    $('topo-save-layout').addEventListener('click', async () => {
+        if (!_last || !_frameReady) return;
+        const w = await _frameReady;
+        try {
+            writeLayout(w.TopologyViewer.nlGetPositions());
+        } catch (e) {
+            layoutNote('Could not save: browser storage is off or full');
+            return;
+        }
+        $('topo-reset-layout').disabled = false;
+        setLayoutDirty(false);
+        layoutNote(`Saved layout · ${new Date().toLocaleDateString()}`);
+    });
+
+    $('topo-reset-layout').addEventListener('click', async () => {
+        if (!_frameReady) return;
+        if (!confirm('Forget the saved layout for this site selection?')) return;
+        clearLayout();
+        $('topo-reset-layout').disabled = true;
+        const w = await _frameReady;
+        w.TopologyViewer.applyLayout('dagre');
+        setLayoutDirty(false);
+        layoutNote('');
+    });
     $('topo-fit').addEventListener('click', () =>
         _frameReady && _frameReady.then(w => w.TopologyViewer.fitView()));
 
@@ -442,6 +531,7 @@ async function load() {
     const tv = win.TopologyViewer;
     tv.loadTopology(JSON.stringify(data.map));
     applyGrouping(tv, data);
+    restoreLayout(tv);
     const { edges, nodes } = _compare ? diffDecorations(data) : mapDecorations(data);
     tv.nlDecorate(edges, nodes);
     _index = buildIndex(data);
@@ -576,6 +666,8 @@ function installBridge(win) {
             } catch (e) { /* ignore */ }
         },
         onFocusCleared: () => setActive('', {}),
+        // SC2 fires this on every node drag end.
+        onLayoutChanged: () => setLayoutDirty(true),
         onSlash: () => {
             const ev = new KeyboardEvent('keydown', { key: '/' });
             if (_keyHandler) _keyHandler(ev);

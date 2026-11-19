@@ -30,6 +30,8 @@ export function render() {
                 <option value="failed">Failed</option>
             </select>
             <span class="ml-auto text-faint mono fs-12" id="dev-count"></span>
+            <button class="btn btn-sm" id="dev-import-btn" style="display:none"
+                title="Import or update devices from a Secure Cartography map.json (admin)">Import map</button>
             <button class="btn btn-sm btn-primary" id="dev-add-btn">${icons.plus} Add Device</button>
         </div>
         <div class="card" id="dev-table-card">
@@ -94,6 +96,15 @@ export async function init(params) {
 
     // Wire Add Device modal
     document.getElementById('dev-add-btn').addEventListener('click', openAddModal);
+
+    // Map import lives in the setup wizard's Devices step (preview, then
+    // import; re-running is idempotent). Admin-only, like the wizard.
+    const importBtn = document.getElementById('dev-import-btn');
+    importBtn.addEventListener('click', () => { location.hash = '#/setup?step=devices'; });
+    api.auth.me().then(me => {
+        const u = me && (me.user || me);   // /auth/me returns { user, auth }
+        if (u && u.role === 'admin' && document.getElementById('dev-import-btn')) importBtn.style.display = '';
+    }).catch(() => { /* not signed in or no auth: leave hidden */ });
     document.getElementById('dev-add-close').addEventListener('click', closeAddModal);
     document.getElementById('dev-add-cancel').addEventListener('click', closeAddModal);
     document.getElementById('dev-add-modal').addEventListener('click', (e) => {

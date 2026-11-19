@@ -159,6 +159,8 @@ The rest of this section is the equivalent CLI path.
 
 ### Import devices from a Secure Cartography map
 
+In the UI, admins use **Devices → Import map**: it opens the setup wizard's Devices step, where a `map.json` is uploaded, previewed and then imported. The preview marks every device **new**, **change** (with each field it would change, current → map) or **unchanged**, and flags unrecognized platforms. **Update existing devices** off imports only new devices and leaves existing ones — including hand-edited IPs and roles — as they are. A platform the map can't resolve never replaces a known one. Other options cover forcing a site, excluding hostname prefixes, skipping unrecognized platforms, and whether imported devices collect. Devices with no credential assigned use the vault's default credential, so they collect on their next scheduled run. The CLI does the same:
+
 ```bash
 # Dry run — parse and report, no writes
 python -m netlapse sync-map /path/to/map.json --dry-run
@@ -168,7 +170,12 @@ python -m netlapse sync-map /path/to/map.json
 
 # Exclude OOB management switches
 python -m netlapse sync-map /path/to/map.json --exclude-prefix oob
+
+# Add new devices only; leave existing devices' IP, platform and role alone
+python -m netlapse sync-map /path/to/map.json --new-only
 ```
+
+`--dry-run` lists each existing device the import would change, field by field.
 
 The importer understands two hostname conventions:
 
@@ -347,7 +354,7 @@ Environment variables:
 | Command | Does |
 |---|---|
 | `python -m netlapse` / `serve` | Start the daemon: scheduler, API, web UI |
-| `sync-map MAP.json` | Import sites, roles, platforms and devices from an SC2 map (`--dry-run`, `--exclude-prefix`, `--site`, `--roles`) |
+| `sync-map MAP.json` | Import sites, roles, platforms and devices from an SC2 map (`--dry-run`, `--new-only`, `--exclude-prefix`, `--site`, `--roles`) |
 | `vault init` / `add-ssh` / `list` / `assign` / `delete` | Credential vault management |
 | `collect` | One-shot collection by filter (`--site`, `--role`, `--credential`) or `--job SLUG` |
 | `definitions validate` / `sync` / `list` / `adopt` | The definition catalog |
@@ -471,7 +478,7 @@ A single-page app with no build step: vanilla JS ES modules, a hash router, and 
 | One Search | `#/onesearch` | One token → identity plus every reference, grouped by capture type |
 | Collection | `#/collection` | Run a job and watch per-device progress live |
 | Changes | `#/changes` | Fleet change feed, deep-linking into per-device semantic diff |
-| Topology | `#/topology` | LLDP map: sites, as-of, compare, device list, device dialog |
+| Topology | `#/topology` | LLDP map: sites, as-of, compare, device list, device dialog, saved layouts |
 | Setup | `#/setup` | First-run wizard; reopenable, each step reports live state |
 | Settings | `#/settings` | System overview, config editor, data browser, backup and restore |
 | Credentials | `#/credentials` | Vault credentials and assignment |
@@ -560,7 +567,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-**331 tests**, concentrated where being quietly wrong is worse than failing — record identity, authentication, the noise policy that decides what counts as a change, and the map's link decisions.
+**335 tests**, concentrated where being quietly wrong is worse than failing — record identity, authentication, the noise policy that decides what counts as a change, and the map's link decisions.
 
 | Module | Tests | Covers |
 |---|---|---|
@@ -569,7 +576,8 @@ pytest
 | `test_auth_providers.py` | 58 | Local and LDAP providers, group gate, admin elevation, shadow rows, local-disable precedence, filter escaping |
 | `test_volatility.py` | 52 | Field-level and config-line noise policy, code baseline unioned with YAML |
 | `test_ldapd.py` | 36 | The LDAP fixture itself and the client behaviors it pins (BER, filters, referrals, StartTLS, fault injection) |
-| `test_topology.py` | 21 | LLDP field variants, cross-vendor port matching, link states, cross-site guard, site scope, as-of on both backends, compare |
+| `test_topology.py` | 22 | LLDP field variants, cross-vendor port matching, link states, cross-site guard, site scope, as-of on both backends, compare |
+| `test_map_import.py` | 3 | Map import: preview matches the import field for field, `--new-only` keeps hand edits, an unknown platform never clears a known one |
 
 Two deserve a note on *how* they test.
 

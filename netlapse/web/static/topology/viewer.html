@@ -2133,6 +2133,66 @@ window.DebugLog = DebugLog;
         cy.fit(undefined, 40);
     };
 
+    // ── saved layouts ────────────────────────────────────────────────
+    // The host keeps positions in localStorage. Only devices are stored:
+    // site boxes size themselves around their children.
+    TopologyViewer.nlGetPositions = function () {
+        const out = {};
+        if (!this.cy) return out;
+        this.cy.nodes().filter(n => !n.isParent()).forEach(n => {
+            const p = n.position();
+            out[n.id()] = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+        });
+        return out;
+    };
+
+    // Apply saved positions. Devices the save doesn't know (new since the
+    // save, or only in a Compare union) go next to a placed neighbor, else
+    // under their site's devices, else in a row below the map. Returns
+    // { placed, added } or null when nothing in the save matches.
+    TopologyViewer.nlSetPositions = function (positions) {
+        const cy = this.cy;
+        if (!cy || !positions) return null;
+        const leaves = cy.nodes().filter(n => !n.isParent());
+        if (!leaves.some(n => positions[n.id()])) return null;
+        // Stop the default layout (animated) so it can't move nodes after us.
+        cy.stop(true, false);
+        cy.nodes().stop(true, false);
+        const placed = new Set();
+        const missing = [];
+        cy.batch(() => {
+            leaves.forEach(n => {
+                const p = positions[n.id()];
+                if (p && isFinite(p.x) && isFinite(p.y)) { n.position({ x: p.x, y: p.y }); placed.add(n.id()); }
+                else missing.push(n);
+            });
+            const all = leaves.filter(n => placed.has(n.id())).boundingBox();
+            let spillX = all.x1;
+            const perAnchor = new Map();
+            const bump = (key) => { const k = perAnchor.get(key) || 0; perAnchor.set(key, k + 1); return k; };
+            for (const n of missing) {
+                const nbrs = n.neighborhood('node').filter(m => placed.has(m.id()));
+                if (nbrs.length) {
+                    const anchor = nbrs[0];
+                    const k = bump(anchor.id());
+                    const a = anchor.position();
+                    n.position({ x: a.x + (k % 2 ? -1 : 1) * (40 + 30 * Math.floor(k / 2)), y: a.y + 90 });
+                } else if (n.parent().length && n.parent().children().some(m => placed.has(m.id()))) {
+                    const sibs = n.parent().children().filter(m => placed.has(m.id()));
+                    const bb = sibs.boundingBox();
+                    const k = bump(n.parent().id());
+                    n.position({ x: bb.x1 + 70 * k, y: bb.y2 + 90 });
+                } else {
+                    n.position({ x: spillX, y: all.y2 + 160 });
+                    spillX += 90;
+                }
+                placed.add(n.id());
+            }
+        });
+        cy.fit(undefined, 40);
+        return { placed: leaves.length - missing.length, added: missing.length };
+    };
+
     const baseLayout = TopologyViewer.applyLayout.bind(TopologyViewer);
     TopologyViewer.applyLayout = function (algorithm = 'dagre') {
         if (this.cy && this.cy.nodes('.nl-site').length &&

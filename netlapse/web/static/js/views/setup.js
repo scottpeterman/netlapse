@@ -44,6 +44,11 @@ export function render() {
 
 export async function init() {
     await refresh(true);
+    // #/setup?step=devices (from Devices → Import map) opens that step
+    // directly, even when setup is long complete.
+    const q = new URLSearchParams((location.hash.split('?')[1]) || '');
+    const want = q.get('step');
+    if (want && _st && STEPS.some(s => s.key === want)) go(want);
 }
 
 export function destroy() {
@@ -302,7 +307,8 @@ function stepDevices() {
     const have = _st.devices > 0;
     return h2('Devices',
             'Import a Secure Cartography <code class="code">map.json</code>. Sites and roles are created as needed; ' +
-            'roles come from roles.yaml. Re-importing is safe — existing devices are updated, not duplicated.') +
+            'roles come from roles.yaml. Re-importing is safe — existing devices are matched by name and site, never duplicated; ' +
+            'the preview lists every field an import would change.') +
         (have ? okLine(`${_st.devices} device(s) across ${_st.sites} site(s) in inventory`) : '') +
         `<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
             <div class="form-group" style="margin:0">
@@ -323,6 +329,8 @@ function stepDevices() {
                 <input type="checkbox" id="wz-mcoll" checked> Enable collection</label>
             <label class="form-label-inline" style="margin-bottom:6px" title="Skip nodes whose platform isn't in Reference Data → Platforms (e.g. discovered by IP with no platform). They would import but never collect.">
                 <input type="checkbox" id="wz-mskip"> Skip unrecognized platforms</label>
+            <label class="form-label-inline" style="margin-bottom:6px" title="Off: only devices not already in inventory are created; existing devices keep their IP, platform and role (useful when you've edited them by hand).">
+                <input type="checkbox" id="wz-mupd" checked> Update existing devices</label>
             <button class="btn btn-sm" id="wz-mprev" ${_mapFile ? '' : 'disabled'}>Preview</button>
         </div>
         <div class="form-error" id="wz-merr" style="display:none"></div>
@@ -339,6 +347,7 @@ function mapOpts() {
         exclude: document.getElementById('wz-mexcl').value.trim(),
         collection: document.getElementById('wz-mcoll').checked,
         skip_unknown: document.getElementById('wz-mskip').checked,
+        update_existing: document.getElementById('wz-mupd').checked,
     };
 }
 
@@ -351,29 +360,50 @@ function renderPreview(p) {
         ? warnLine(`Platforms with no match in Reference Data → Platforms: ${p.unknown_platforms.map(x => `<code class="code">${escapeHtml(x)}</code>`).join(' ')}.
             Those devices import without a platform and won't collect until one is set.`)
         : '';
-    const rows = (p.devices || []).slice(0, 300).map(d => `
+    // What happens to each device, most consequential first; unchanged
+    // devices sink to the bottom.
+    const ORDER = { update: 0, create: 1, kept: 2, unchanged: 3 };
+    const ACTION = {
+        create: '<span class="text-success">new</span>',
+        update: '<span style="color:var(--orange)">change</span>',
+        kept: '<span class="text-muted" title="Differs from the map, left as-is (Update existing devices is off)">kept</span>',
+        unchanged: '<span class="text-faint">unchanged</span>',
+    };
+    const changeText = (c) => Object.entries(c || {}).map(([k, v]) =>
+        `${escapeHtml(k)} <span class="text-faint">${escapeHtml(v[0] || '—')}</span> → <strong>${escapeHtml(v[1])}</strong>`).join('<br>');
+    const sorted = [...(p.devices || [])].sort((a, b) =>
+        (ORDER[a.action] ?? 9) - (ORDER[b.action] ?? 9) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const rows = sorted.slice(0, 300).map(d => `
         <tr>
             <td class="mono fs-12">${escapeHtml(d.name)}</td>
             <td class="fs-12">${escapeHtml(d.site)}</td>
             <td class="mono fs-12">${escapeHtml(d.ip || '—')}</td>
             <td class="fs-12" ${d.platform_known ? '' : 'style="color:var(--orange)"'}>${escapeHtml(d.platform || '—')}</td>
             <td class="fs-12">${escapeHtml(d.role)}</td>
-            <td class="fs-12">${d.action === 'create' ? '<span class="text-success">new</span>' : '<span class="text-muted">update</span>'}${d.legacy_ssh_hint ? ' <span class="text-faint" title="old firmware — legacy SSH algorithms likely">legacy ssh</span>' : ''}</td>
+            <td class="fs-12">${ACTION[d.action] || escapeHtml(d.action)}${d.legacy_ssh_hint ? ' <span class="text-faint" title="old firmware — legacy SSH algorithms likely">legacy ssh</span>' : ''}</td>
+            <td class="fs-12 mono">${changeText(d.changes)}</td>
         </tr>`).join('');
+    const nChange = p.would_update || 0, nKeep = p.would_keep || 0;
+    const writes = (p.would_create || 0) + nChange;
     out.innerHTML = `
-        <div class="fs-12" style="margin-bottom:8px"><strong>${p.total}</strong> device(s):
-            <span class="text-success">${p.would_create} new</span>, ${p.would_update} existing${
+        <div class="fs-12" style="margin-bottom:8px"><strong>${p.total}</strong> device(s) in the map:
+            <span class="text-success">${p.would_create} new</span>,
+            <span ${nChange ? 'style="color:var(--orange)"' : ''}>${nChange} will change</span>,
+            ${p.unchanged || 0} unchanged${nKeep ? `, ${nKeep} differ but kept as-is` : ''}${
             p.skipped_unknown_platform ? ` · <span class="text-muted">${p.skipped_unknown_platform} skipped (unrecognized platform)</span>` : ''}${
             p.site_override ? ` · site <code class="code">${escapeHtml(p.site_override)}</code>` : ''}</div>
         <div style="margin-bottom:6px"><span class="text-faint fs-11" style="margin-right:6px">Sites</span>${chips(p.by_site)}</div>
         <div style="margin-bottom:6px"><span class="text-faint fs-11" style="margin-right:6px">Platforms</span>${chips(p.by_platform)}</div>
         <div style="margin-bottom:8px"><span class="text-faint fs-11" style="margin-right:6px">Roles</span>${chips(p.by_role)}</div>
         ${unknown}
+        ${nChange ? warnLine(`${nChange} existing device(s) will be changed to match the map — check the Changes column. ` +
+            'Untick <strong>Update existing devices</strong> to keep IP, platform and role edits you made by hand.') : ''}
         <div class="table-wrap" style="max-height:320px;overflow:auto;margin-top:8px">
-            <table><thead><tr><th>Device</th><th>Site</th><th>IP</th><th>Platform</th><th>Role</th><th></th></tr></thead>
+            <table><thead><tr><th>Device</th><th>Site</th><th>IP</th><th>Platform</th><th>Role</th><th></th><th>Changes</th></tr></thead>
             <tbody>${rows}</tbody></table></div>
-        ${(p.devices || []).length > 300 ? `<div class="text-faint fs-11" style="margin-top:4px">Showing 300 of ${p.devices.length}.</div>` : ''}
-        <div style="margin-top:12px"><button class="btn btn-primary btn-sm" id="wz-mimp">Import ${p.total} device(s)</button></div>`;
+        ${sorted.length > 300 ? `<div class="text-faint fs-11" style="margin-top:4px">Showing 300 of ${sorted.length}.</div>` : ''}
+        <div style="margin-top:12px"><button class="btn btn-primary btn-sm" id="wz-mimp" ${writes ? '' : 'disabled'}>${
+            writes ? `Import: create ${p.would_create}, change ${nChange}` : 'Nothing to import'}</button></div>`;
     document.getElementById('wz-mimp').addEventListener('click', doImport);
 }
 
@@ -385,7 +415,7 @@ async function doImport() {
         _preview = null;
         await refresh();
         const out = document.getElementById('wz-mout');
-        if (out) out.innerHTML = okLine(`Imported: ${r.created} created, ${r.updated} updated, ${r.skipped} skipped` +
+        if (out) out.innerHTML = okLine(`Imported: ${r.created} created, ${r.updated} changed, ${r.skipped} left as-is` +
             (r.sites_created.length ? ` · sites created: ${r.sites_created.map(escapeHtml).join(', ')}` : '') +
             (r.roles_created.length ? ` · roles created: ${r.roles_created.map(escapeHtml).join(', ')}` : '')) +
             (r.errors.length ? warnLine(`${r.errors.length} error(s): ${r.errors.slice(0, 5).map(escapeHtml).join('; ')}`) : '');
@@ -406,6 +436,10 @@ wire.devices = () => {
         document.getElementById('wz-mout').innerHTML = '';
         showError('wz-merr', '');
     });
+    // Options change what the import would do; refresh an open preview.
+    ['wz-mupd', 'wz-mskip'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+        if (_preview) document.getElementById('wz-mprev').click();
+    }));
     document.getElementById('wz-mprev').addEventListener('click', async () => {
         const btn = document.getElementById('wz-mprev');
         btn.disabled = true; btn.textContent = 'Parsing…';

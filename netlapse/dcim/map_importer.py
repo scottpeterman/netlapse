@@ -640,6 +640,46 @@ def parse_map(
 # DCIM sync
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def _plan_device(conn, dev, platform_map, update_existing):
+    """What importing this device would do, without writing.
+
+    Returns (action, changes, existing_id):
+      create     not in inventory (name + site)
+      update     in inventory and the map differs on IP, platform or role
+      unchanged  in inventory and nothing differs
+      kept       would update, but update_existing is off
+
+    changes maps field -> [current, from_map]. A platform the map can't
+    resolve never replaces a known one; an empty IP never clears one.
+    """
+    site = conn.execute("SELECT id FROM dcim_site WHERE slug = ?", (dev.site_slug,)).fetchone()
+    existing = None
+    if site:
+        existing = conn.execute(
+            "SELECT d.id, d.primary_ip4, d.platform_id, p.slug, r.slug "
+            "FROM dcim_device d "
+            "LEFT JOIN dcim_platform p ON p.id = d.platform_id "
+            "LEFT JOIN dcim_device_role r ON r.id = d.role_id "
+            "WHERE d.name = ? AND d.site_id = ?",
+            (dev.short_name, site[0]),
+        ).fetchone()
+    if not existing:
+        return "create", {}, None
+
+    dev_id, cur_ip, cur_pid, cur_platform, cur_role = existing
+    changes = {}
+    if dev.ip and cur_ip != dev.ip:
+        changes["ip"] = [cur_ip or "", dev.ip]
+    new_pid = platform_map.get(dev.platform_slug)
+    if new_pid and cur_pid != new_pid:
+        changes["platform"] = [cur_platform or "", dev.platform_slug]
+    if dev.role_slug and cur_role != dev.role_slug:
+        changes["role"] = [cur_role or "", dev.role_slug]
+    if not changes:
+        return "unchanged", {}, dev_id
+    return ("update" if update_existing else "kept"), changes, dev_id
+
 def sync_from_map(
     db,
     map_path: str | Path,
@@ -648,6 +688,7 @@ def sync_from_map(
     site_override: Optional[str] = None,
     collection_enabled: bool = True,
     dry_run: bool = False,
+    update_existing: bool = True,
 ) -> SyncResult:
     """
     Import/sync devices from a Secure Cartography topology map.
@@ -664,7 +705,11 @@ def sync_from_map(
         exclude_prefixes: Hostname prefixes to skip.
         site_override: Force all devices to this site slug.
         collection_enabled: Default collection_enabled for new devices.
-        dry_run: If True, parse and report but don't write to DB.
+        dry_run: If True, plan and report but don't write to DB. Counts and
+                 per-device action/changes are what the import would do.
+        update_existing: If False, devices already in inventory are left as
+                 they are (reported as "kept" when the map differs) and only
+                 new devices are created.
 
     Returns:
         SyncResult with counts and details.
@@ -676,8 +721,21 @@ def sync_from_map(
     devices = parse_map(data, role_rules, exclude_prefixes, site_override)
     logger.info("Parsed %d devices from %s", len(devices), map_path)
 
-    if dry_run:
-        for dev in devices:
+    conn = db.conn
+
+    # ── Resolve platform and role IDs ────────────────────────────────
+    platform_map = {row[0]: row[1] for row in conn.execute("SELECT slug, id FROM dcim_platform")}
+    role_map_db = {row[0]: row[1] for row in conn.execute("SELECT slug, id FROM dcim_device_role")}
+
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # ── Plan, then (unless dry run) apply ────────────────────────────
+    # The plan is the same for preview and import, so a preview shows the
+    # exact field changes the import will make — and "unchanged" for the
+    # devices it won't touch.
+    for dev in devices:
+        try:
+            action, changes, existing_id = _plan_device(conn, dev, platform_map, update_existing)
             result.devices.append({
                 "name": dev.short_name,
                 "site": dev.site_slug,
@@ -686,131 +744,78 @@ def sync_from_map(
                 "role": dev.role_slug,
                 "legacy_ssh_hint": dev.legacy_ssh_hint,
                 "peers": dev.peer_count,
+                "action": action,
+                "changes": changes,
             })
-            result.skipped += 1
-        return result
+            if dry_run:
+                if action == "create":
+                    result.created += 1
+                elif action == "update":
+                    result.updated += 1
+                else:
+                    result.skipped += 1
+                continue
 
-    conn = db.conn
+            if action in ("unchanged", "kept"):
+                result.skipped += 1
+                continue
 
-    # ── Resolve platform IDs ─────────────────────────────────────────
-    # Map platform_slug → platform_id from the seeded dcim_platform table
-    platform_map = {}
-    for row in conn.execute(
-        "SELECT slug, id FROM dcim_platform"
-    ).fetchall():
-        platform_map[row[0]] = row[1]
-
-    # ── Resolve role IDs ─────────────────────────────────────────────
-    role_map_db = {}
-    for row in conn.execute(
-        "SELECT slug, id FROM dcim_device_role"
-    ).fetchall():
-        role_map_db[row[0]] = row[1]
-
-    # ── Process each device ──────────────────────────────────────────
-    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    for dev in devices:
-        try:
-            # Ensure site exists
             site_id = _ensure_site(conn, dev.site_slug, result)
-
-            # Ensure role exists
             role_id = _ensure_role(conn, dev.role_slug, role_map_db, result)
-
-            # Resolve platform_id (use seeded platforms, skip if unknown)
             platform_id = platform_map.get(dev.platform_slug)
+
+            if action == "update":
+                sets, params = [], []
+                if "ip" in changes:
+                    sets.append("primary_ip4 = ?"); params.append(dev.ip)
+                if "platform" in changes:
+                    sets.append("platform_id = ?"); params.append(platform_id)
+                if "role" in changes:
+                    sets.append("role_id = ?"); params.append(role_id)
+                sets.append("updated_at = ?"); params.append(now_iso)
+                params.append(existing_id)
+                conn.execute(f"UPDATE dcim_device SET {', '.join(sets)} WHERE id = ?", params)
+                result.updated += 1
+                logger.info(
+                    "Updated %s/%s: %s", dev.site_slug, dev.short_name,
+                    "; ".join(f"{k} {v[0] or '-'} -> {v[1]}" for k, v in changes.items()),
+                )
+                continue
+
+            # create
             if platform_id is None and dev.platform_slug != "unknown":
                 logger.warning(
                     "Platform '%s' not in DCIM for device %s — "
                     "device will be created without platform assignment",
                     dev.platform_slug, dev.fqdn,
                 )
-
-            # Check if device already exists (by name + site)
-            existing = conn.execute(
-                "SELECT id, primary_ip4, platform_id, role_id "
-                "FROM dcim_device WHERE name = ? AND site_id = ?",
-                (dev.short_name, site_id),
-            ).fetchone()
-
-            if existing:
-                # Update if anything changed
-                changes = []
-                params = []
-
-                if existing[1] != dev.ip and dev.ip:
-                    changes.append("primary_ip4 = ?")
-                    params.append(dev.ip)
-
-                if platform_id and existing[2] != platform_id:
-                    changes.append("platform_id = ?")
-                    params.append(platform_id)
-
-                if role_id and existing[3] != role_id:
-                    changes.append("role_id = ?")
-                    params.append(role_id)
-
-                if changes:
-                    changes.append("updated_at = ?")
-                    params.append(now_iso)
-                    params.append(existing[0])
-
-                    conn.execute(
-                        f"UPDATE dcim_device SET {', '.join(changes)} "
-                        f"WHERE id = ?",
-                        params,
-                    )
-                    result.updated += 1
-                    logger.debug(
-                        "Updated %s/%s: %s",
-                        dev.site_slug, dev.short_name,
-                        ", ".join(changes[:-1]),
-                    )
-                else:
-                    result.skipped += 1
-            else:
-                # Insert new device
-                conn.execute(
-                    "INSERT INTO dcim_device "
-                    "(name, site_id, platform_id, role_id, "
-                    " primary_ip4, collection_enabled, status, "
-                    " description, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
-                    (
-                        dev.short_name,
-                        site_id,
-                        platform_id,
-                        role_id,
-                        dev.ip,
-                        1 if collection_enabled else 0,
-                        f"SC2 discovery: {dev.platform_str}",
-                        now_iso,
-                        now_iso,
-                    ),
-                )
-                result.created += 1
-                logger.info(
-                    "Created %s/%s (%s) ip=%s role=%s",
-                    dev.site_slug, dev.short_name,
-                    dev.platform_slug, dev.ip, dev.role_slug,
-                )
-
-            # Track for reporting
-            result.devices.append({
-                "name": dev.short_name,
-                "site": dev.site_slug,
-                "ip": dev.ip,
-                "platform": dev.platform_slug,
-                "role": dev.role_slug,
-                "legacy_ssh_hint": dev.legacy_ssh_hint,
-                "peers": dev.peer_count,
-            })
+            conn.execute(
+                "INSERT INTO dcim_device "
+                "(name, site_id, platform_id, role_id, "
+                " primary_ip4, collection_enabled, status, "
+                " description, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+                (
+                    dev.short_name, site_id, platform_id, role_id, dev.ip,
+                    1 if collection_enabled else 0,
+                    f"SC2 discovery: {dev.platform_str}", now_iso, now_iso,
+                ),
+            )
+            result.created += 1
+            logger.info(
+                "Created %s/%s (%s) ip=%s role=%s",
+                dev.site_slug, dev.short_name,
+                dev.platform_slug, dev.ip, dev.role_slug,
+            )
 
         except Exception as e:
             error_msg = f"{dev.fqdn}: {e}"
             result.errors.append(error_msg)
             logger.error("Failed to import %s: %s", dev.fqdn, e)
+
+    if dry_run:
+        conn.rollback()
+        return result
 
     conn.commit()
 
@@ -936,6 +941,12 @@ def cli_sync_map(args: list) -> int:
         help="Path to SC2 map.json file",
     )
     parser.add_argument(
+        "--new-only",
+        action="store_true",
+        help="Only create devices not already in inventory; leave existing "
+             "devices' IP, platform and role as they are",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse and report without writing to database",
@@ -1038,12 +1049,25 @@ def cli_sync_map(args: list) -> int:
             site_override=opts.site,
             collection_enabled=not opts.no_collection,
             dry_run=opts.dry_run,
+            update_existing=not opts.new_only,
         )
 
         if opts.dry_run:
             print("\n=== DRY RUN — no changes written ===\n")
 
         print(result.summary())
+
+        # Field-level changes to devices already in inventory: what an
+        # import changes (or, with --new-only, what it leaves alone).
+        changed = [d for d in result.devices if d.get("action") in ("update", "kept")]
+        if changed:
+            verb = "Would change" if opts.dry_run else "Changed"
+            if opts.new_only:
+                verb = "Left as-is (--new-only)"
+            print(f"\n{verb}: {len(changed)} existing device(s)")
+            for d in changed:
+                diffs = "; ".join(f"{k} {v[0] or '-'} -> {v[1]}" for k, v in d["changes"].items())
+                print(f"    {d['site']}/{d['name']}: {diffs}")
 
         # Print legacy SSH warnings
         legacy = [d for d in result.devices if d.get("legacy_ssh_hint")]

@@ -56,6 +56,22 @@ Unmanaged neighbors sit in the site of the device that hears them. With sites
 selected, the boxes show those sites plus the devices one link away, grouped
 by their own site. Force layout uses cytoscape's compound handling.
 
+## Saved layouts
+
+Drag devices (or whole site boxes) where you want them and click **Save
+layout**. The positions are stored in the browser's localStorage, one layout
+per site selection and per grouping mode, since a grouped map and a flat one
+place the same devices differently. The map draws in the saved layout from
+then on, and Compare uses the same one, so a diff appears in the arrangement
+you know. A device the saved layout doesn't know (new since the save, or only
+in a Compare window) is placed next to a neighbor that is in it, and the note
+beside the buttons says how many. **Save layout •** means positions have moved
+since the last save; Hierarchical, Force, or a drag all set it. **Reset layout**
+forgets the saved layout for the current selection and re-runs Hierarchical.
+
+Layouts belong to one browser and one address: the same server opened as
+`localhost:8888` and as `10.x.x.x:8888` keeps two separate sets.
+
 ## Finding a device
 
 The device list beside the map is grouped by site, with unmanaged neighbors in

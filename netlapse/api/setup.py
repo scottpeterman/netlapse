@@ -263,7 +263,7 @@ def _site_slug(raw: Optional[str]) -> Optional[str]:
 
 async def _map_sync(request: Request, dry_run: bool, site: Optional[str],
                     exclude: Optional[str], collection: bool,
-                    skip_unknown: bool = False):
+                    skip_unknown: bool = False, update_existing: bool = True):
     from netlapse.dcim.map_importer import clear_caches, parse_platform, sync_from_map
 
     raw = await request.body()
@@ -309,6 +309,7 @@ async def _map_sync(request: Request, dry_run: bool, site: Optional[str],
                 db=db, map_path=tmp, role_rules=_role_rules(db),
                 exclude_prefixes=excludes, site_override=site,
                 collection_enabled=collection, dry_run=dry_run,
+                update_existing=update_existing,
             )
         finally:
             os.unlink(tmp)
@@ -329,12 +330,10 @@ async def _map_sync(request: Request, dry_run: bool, site: Optional[str],
         "sites_created": result.sites_created, "roles_created": result.roles_created,
     }
     if dry_run:
-        devs = []
-        for d in result.devices:
-            exists = db.get_device_by_name_and_site(d["name"], d["site"]) \
-                if hasattr(db, "get_device_by_name_and_site") else None
-            devs.append({**d, "action": "update" if exists else "create",
-                         "platform_known": d.get("platform") in known_platforms})
+        # action / changes come from the importer's own plan, so the preview
+        # is exactly what the import will do.
+        devs = [{**d, "platform_known": d.get("platform") in known_platforms}
+                for d in result.devices]
         by = lambda k: {v: sum(1 for x in devs if x.get(k) == v)
                         for v in sorted({str(x.get(k)) for x in devs})}
         out.update({
@@ -346,6 +345,8 @@ async def _map_sync(request: Request, dry_run: bool, site: Optional[str],
             "unknown_platforms": sorted({d["platform"] for d in devs if not d["platform_known"]}),
             "would_create": sum(1 for d in devs if d["action"] == "create"),
             "would_update": sum(1 for d in devs if d["action"] == "update"),
+            "unchanged": sum(1 for d in devs if d["action"] == "unchanged"),
+            "would_keep": sum(1 for d in devs if d["action"] == "kept"),
         })
     else:
         logger.warning("Setup: map import — %d created, %d updated, %d skipped",
@@ -356,15 +357,15 @@ async def _map_sync(request: Request, dry_run: bool, site: Optional[str],
 @router.post("/api/v1/setup/map/preview")
 async def map_preview(request: Request, site: Optional[str] = None,
                       exclude: Optional[str] = None, collection: bool = True,
-                      skip_unknown: bool = False):
-    return await _map_sync(request, True, site, exclude, collection, skip_unknown)
+                      skip_unknown: bool = False, update_existing: bool = True):
+    return await _map_sync(request, True, site, exclude, collection, skip_unknown, update_existing)
 
 
 @router.post("/api/v1/setup/map/import")
 async def map_import(request: Request, site: Optional[str] = None,
                      exclude: Optional[str] = None, collection: bool = True,
-                     skip_unknown: bool = False):
-    return await _map_sync(request, False, site, exclude, collection, skip_unknown)
+                     skip_unknown: bool = False, update_existing: bool = True):
+    return await _map_sync(request, False, site, exclude, collection, skip_unknown, update_existing)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

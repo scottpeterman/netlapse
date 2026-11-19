@@ -226,13 +226,16 @@ def mac_table(request: Request, device_dir: str, as_of: Optional[str] = None):
 
 # ── device dialog detail ─────────────────────────────────────────────
 
-# Captures never scanned for hardware/version facts: big, and not where a
-# model or serial lives.
-_NOT_HARDWARE = {"config", "routes", "mac", "arp", "interfaces", "lldp", "bgp", "ospf"}
+# Hardware facts come only from captures that carry them, in this order:
+# a version capture first (model, OS version, uptime), then an inventory or
+# chassis-hardware capture fills what's still missing (serial on Cisco, the
+# chassis row on Junos). Matching by name keeps unrelated captures (bgp6,
+# routesum, custom jobs) from ever being mistaken for hardware.
+_HW_CAPTURE_ORDER = ("version", "inventory", "hardware", "chassis")
 
 _HW_KEYS = {
-    "model": ("MODEL", "HARDWARE", "PLATFORM", "CHASSIS", "PID"),
-    "serial": ("SERIAL_NUMBER", "SERIAL", "SN"),
+    "model": ("MODEL", "HARDWARE", "PLATFORM", "CHASSIS_DESCRIPTION", "PID", "DESCR"),
+    "serial": ("SERIAL_NUMBER", "SERIAL", "CHASSIS_SERIAL_NUMBER", "SN"),
     "os_version": ("SOFTWARE_VERSION", "JUNOS_VERSION", "VERSION", "OS_VERSION", "IMAGE_VERSION"),
     "uptime": ("UPTIME",),
     "hw_rev": ("HW_VERSION", "HARDWARE_REV", "VID"),
@@ -255,21 +258,31 @@ def _mbps(rec: dict) -> str:
 
 
 def _iface_row(rec: dict) -> dict:
+    """One interface row from any of the interface templates:
+    `show interfaces` (INTERFACE, DESCRIPTION, LINK_STATUS/PROTOCOL_STATUS),
+    `show interfaces status` (PORT, NAME = the description, STATUS), and Junos
+    `show interfaces terse` (INTERFACE, ADMIN_STATE, LINK_STATE, LOCAL)."""
     ip = _first(rec, ("IP_ADDRESS", "LOCAL"))
     plen = _first(rec, ("PREFIX_LENGTH",))
     if ip and plen and "/" not in ip:
         ip = f"{ip}/{plen}"
-    link = _first(rec, ("LINK_STATUS", "STATUS"))
-    proto = _first(rec, ("PROTOCOL_STATUS", "ADMIN_STATE"))
+    if "ADMIN_STATE" in rec and "LINK_STATE" in rec:       # Junos terse
+        status = "/".join(x for x in (_first(rec, ("ADMIN_STATE",)), _first(rec, ("LINK_STATE",))) if x)
+    else:
+        link = _first(rec, ("LINK_STATUS", "LINK_STATE", "STATUS"))
+        proto = _first(rec, ("PROTOCOL_STATUS",))
+        status = "/".join(x for x in (link, proto) if x)
+    # In the status-table templates NAME is the port description.
+    alias = _first(rec, ("DESCRIPTION",)) or (_first(rec, ("NAME",)) if "PORT" in rec else "")
     return {
         "name": _first(rec, ("INTERFACE", "PORT", "INTF")),
         "if_index": _first(rec, ("IFINDEX", "SNMP_IFINDEX")),
-        "alias": _first(rec, ("DESCRIPTION",)),
+        "alias": alias,
         "ip_address": ip,
         "mac_address": _first(rec, ("MAC_ADDRESS", "ADDRESS")),
         "speed_mbps": _mbps(rec),
         "mtu": _first(rec, ("MTU",)),
-        "status": "/".join(x for x in (link, proto) if x),
+        "status": status,
     }
 
 
@@ -321,16 +334,23 @@ def node_detail(request: Request, device_dir: str, as_of: Optional[str] = None):
         src("neighbors", "lldp")
 
     hw = {}
-    for ct, (recs, when) in parsed.items():
-        if ct in _NOT_HARDWARE or not recs:
-            continue
-        rec = recs[0]
-        found = {k: _first(rec, keys) for k, keys in _HW_KEYS.items()}
-        found = {k: v for k, v in found.items() if v}
-        if found:
-            hw = found
-            sources["hardware"] = {"capture_type": ct, "collected_at": _iso(when), "records": len(recs)}
-            break
+    hw_from = []
+    for want in _HW_CAPTURE_ORDER:
+        for ct in sorted(c for c in parsed if want in c):
+            recs, when = parsed[ct]
+            if not recs or ct in hw_from:
+                continue
+            rec = recs[0]
+            found = {k: _first(rec, keys) for k, keys in _HW_KEYS.items()}
+            added = {k: v for k, v in found.items() if v and k not in hw}
+            if added:
+                hw.update(added)
+                hw_from.append(ct)
+                if "hardware" not in sources:
+                    sources["hardware"] = {"capture_type": ct, "collected_at": _iso(when),
+                                           "records": len(recs)}
+    if len(hw_from) > 1:
+        sources["hardware"]["capture_type"] = " + ".join(hw_from)
 
     return {
         "ok": True,
