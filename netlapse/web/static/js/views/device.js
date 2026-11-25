@@ -25,7 +25,7 @@ let currentTab = 'raw';
 let captureType = 'config';
 let captureTypes = ['config'];
 let _snapCache = {};       // cache latest snapshots by capture type
-let _parsedView = null;    // { records, keys, snap } for the currently shown parsed table (export source)
+let _parsedView = null;    // { all, records, keys, snap, shown, filter }: parsed table state; records = filtered + sorted (export source)
 let _diffMask = false;     // mask volatile lines (config-change timestamps, etc.)
 let _diffIgnore = null;    // semantic-diff field exclusions: null = server defaults, array = explicit
 let _lastDiff = { from: null, to: null };  // versions behind the current diff, for re-fetch on mask toggle
@@ -974,12 +974,17 @@ async function loadParsed(el) {
             return;
         }
 
-        // Render structured table
-        const keys = Object.keys(records[0]);
+        // Render structured table. Route tables run to tens of thousands of
+        // records, so rows go in pages: filter and sort work on the whole set,
+        // the DOM only ever holds what has been shown.
+        const keys = [...new Set(records.flatMap(r => Object.keys(r)))];
         const recordCount = records.length;
+        _sortCol = -1;
+        _sortAsc = true;
 
-        // Source for the export buttons; kept in sync with sort order below.
-        _parsedView = { records, keys, snap };
+        // Source for the export buttons: every record matching the filter,
+        // in the order shown.
+        _parsedView = { all: records, records, keys, snap, shown: 0, filter: '' };
 
         target.innerHTML = `
             <div class="card">
@@ -991,8 +996,9 @@ async function loadParsed(el) {
                         </span>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
-                        <button class="btn btn-sm" id="parsed-copy-btn" title="Copy as a tab-separated table — paste straight into Excel, Sheets, or Numbers">${icons.copy} Copy</button>
-                        <button class="btn btn-sm" id="parsed-csv-btn" title="Download these records as a CSV file">${icons.download} CSV</button>
+                        <input class="input" id="parsed-filter" placeholder="Filter records…" autocomplete="off" spellcheck="false" style="width:220px">
+                        <button class="btn btn-sm" id="parsed-copy-btn" title="Copy every record matching the filter as a tab-separated table — paste straight into Excel, Sheets, or Numbers">${icons.copy} Copy</button>
+                        <button class="btn btn-sm" id="parsed-csv-btn" title="Download every record matching the filter as a CSV file">${icons.download} CSV</button>
                         <span class="text-muted fs-12" style="margin-left:4px">
                             ${snap.collected_at ? formatTimestamp(snap.collected_at) : '—'}
                         </span>
@@ -1001,29 +1007,38 @@ async function loadParsed(el) {
                 <div class="table-wrap">
                     <table>
                         <thead><tr>${keys.map(k => `<th class="parsed-th">${escapeHtml(k)}</th>`).join('')}</tr></thead>
-                        <tbody id="parsed-tbody">
-                            ${renderRecords(records, keys)}
-                        </tbody>
+                        <tbody id="parsed-tbody"></tbody>
                     </table>
                 </div>
                 <div class="summary-row">
-                    <span>${recordCount} record${recordCount !== 1 ? 's' : ''}</span>
+                    <span id="parsed-shown"></span>
+                    <span id="parsed-more-wrap"></span>
                     <span>${keys.length} fields</span>
                     <span>Template: ${escapeHtml(snap.template_name || '—')}</span>
                     <span>Score: ${snap.template_score || '—'}</span>
                 </div>
             </div>`;
 
+        showParsedRows(true);
+
         // Wire column header click to sort
         document.querySelectorAll('.parsed-th').forEach((th, colIdx) => {
             th.style.cursor = 'pointer';
             th.title = 'Click to sort';
-            th.addEventListener('click', () => {
-                sortTable(records, keys, colIdx, th);
-            });
+            th.addEventListener('click', () => sortTable(keys, colIdx, th));
         });
 
-        // Wire export buttons (operate on the currently displayed order)
+        // Filter: substring match across every field, case-insensitive.
+        let filterTimer = null;
+        document.getElementById('parsed-filter').addEventListener('input', e => {
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(() => {
+                _parsedView.filter = e.target.value.trim().toLowerCase();
+                applyParsedView();
+            }, 200);
+        });
+
+        // Wire export buttons (the filtered set, in display order)
         const copyBtn = document.getElementById('parsed-copy-btn');
         const csvBtn = document.getElementById('parsed-csv-btn');
 
@@ -1046,6 +1061,8 @@ async function loadParsed(el) {
     }
 }
 
+const PARSED_PAGE = 500;
+
 function renderRecords(records, keys) {
     return records.map(r => `<tr>${keys.map(k => {
         const val = String(r[k] ?? '');
@@ -1055,10 +1072,64 @@ function renderRecords(records, keys) {
     }).join('')}</tr>`).join('');
 }
 
+// Append the next page of rows (or start over) and update the footer.
+function showParsedRows(reset) {
+    const v = _parsedView;
+    const tbody = document.getElementById('parsed-tbody');
+    if (!v || !tbody) return;
+    if (reset) {
+        tbody.innerHTML = '';
+        v.shown = 0;
+    }
+    const next = v.records.slice(v.shown, v.shown + PARSED_PAGE);
+    tbody.insertAdjacentHTML('beforeend', renderRecords(next, v.keys));
+    v.shown += next.length;
+
+    const total = v.records.length;
+    const of = v.filter ? `${total} matching of ${v.all.length}` : `${total}`;
+    document.getElementById('parsed-shown').textContent =
+        v.shown < total ? `Showing ${v.shown} of ${of} records` : `${of} record${total !== 1 ? 's' : ''}`;
+    const more = document.getElementById('parsed-more-wrap');
+    if (v.shown < total) {
+        more.innerHTML = `<button class="btn btn-sm" id="parsed-more">Show ${Math.min(PARSED_PAGE, total - v.shown)} more</button>`;
+        document.getElementById('parsed-more').addEventListener('click', () => showParsedRows(false));
+    } else {
+        more.innerHTML = '';
+    }
+}
+
+// Rebuild the filtered, sorted record list and redraw from the first page.
+function applyParsedView() {
+    const v = _parsedView;
+    if (!v) return;
+    let recs = v.all;
+    if (v.filter) {
+        const f = v.filter;
+        recs = recs.filter(r => v.keys.some(k => String(r[k] ?? '').toLowerCase().includes(f)));
+    }
+    if (_sortCol >= 0) {
+        const key = v.keys[_sortCol];
+        recs = [...recs].sort((a, b) => {
+            let va = a[key] ?? '', vb = b[key] ?? '';
+            // Try numeric sort
+            const na = Number(va), nb = Number(vb);
+            if (va !== '' && vb !== '' && !isNaN(na) && !isNaN(nb)) return _sortAsc ? na - nb : nb - na;
+            // String sort
+            va = String(va).toLowerCase();
+            vb = String(vb).toLowerCase();
+            if (va < vb) return _sortAsc ? -1 : 1;
+            if (va > vb) return _sortAsc ? 1 : -1;
+            return 0;
+        });
+    }
+    v.records = recs;
+    showParsedRows(true);
+}
+
 let _sortCol = -1;
 let _sortAsc = true;
 
-function sortTable(records, keys, colIdx, th) {
+function sortTable(keys, colIdx, th) {
     if (_sortCol === colIdx) {
         _sortAsc = !_sortAsc;
     } else {
@@ -1066,31 +1137,13 @@ function sortTable(records, keys, colIdx, th) {
         _sortAsc = true;
     }
 
-    const key = keys[colIdx];
-    const sorted = [...records].sort((a, b) => {
-        let va = a[key] ?? '', vb = b[key] ?? '';
-        // Try numeric sort
-        const na = Number(va), nb = Number(vb);
-        if (!isNaN(na) && !isNaN(nb)) return _sortAsc ? na - nb : nb - na;
-        // String sort
-        va = String(va).toLowerCase();
-        vb = String(vb).toLowerCase();
-        if (va < vb) return _sortAsc ? -1 : 1;
-        if (va > vb) return _sortAsc ? 1 : -1;
-        return 0;
-    });
-
-    // Keep export buttons aligned with what's on screen.
-    if (_parsedView) _parsedView.records = sorted;
-
     // Update sort indicators
     document.querySelectorAll('.parsed-th').forEach(h => {
         h.textContent = h.textContent.replace(/ [▲▼]$/, '');
     });
     th.textContent = `${keys[colIdx]} ${_sortAsc ? '▲' : '▼'}`;
 
-    const tbody = document.getElementById('parsed-tbody');
-    if (tbody) tbody.innerHTML = renderRecords(sorted, keys);
+    applyParsedView();
 }
 
 function statusClass(val) {
