@@ -9,9 +9,9 @@ Two uses:
 
 Both are in the web UI under **Forwarding** (next to Topology), in the API, and on the CLI.
 
-![Forwarding view: site picker and as-of time, summary cards (35 endpoints, 1190 directed pairs, 1156 delivered, 34 failed, 866 asymmetric) and the endpoint matrix colored by status and hop count](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_overview.png)
+![Forwarding view: site picker and as-of time, the den1 and den2 sites selected, summary cards (36 endpoints, 1260 directed pairs, 1225 delivered, 35 failed, 908 asymmetric) and the endpoint matrix colored by status and hop count](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_overview.png)
 
-The screenshots on this page come from the synthetic demo network in `tools/demo_lab.py` (two sites, 35 leafs, a handful of deliberate faults), regenerated with `tools/screenshots.py`. None of it is a real network.
+The screenshots on this page come from the synthetic demo network in `tools/demo_lab.py` (the two Denver sites, 36 leafs, a handful of deliberate faults), regenerated with `tools/screenshots.py`. None of it is a real network.
 
 ## Web view
 
@@ -146,14 +146,14 @@ Per hop, the match class says what the device forwarded on: **specific** (the de
 
 ## Demo network and screenshots
 
-`tools/demo_lab.py` builds a synthetic two-site network into a scratch directory: DCIM database, file storage with two days of history, definitions and a `config.yaml`. 46 devices (EOS and Junos, both EOS route template shapes), with planted findings: two leafs that lost a spine adjacency, a Junos pod installing one of two uplinks, an SVI-attached leaf, a subnet hidden by a Reject aggregate, cross-site asymmetry through the edges, a stale capture and a shared management VLAN on every leaf.
+`tools/demo_lab.py` builds a synthetic three-site network into a scratch directory: DCIM database, file storage with two days of history, definitions and a `config.yaml`. 54 devices (EOS and Junos, both EOS route template shapes), each with routes, LLDP, interface addresses, interfaces, ARP, MAC table (leafs), version and config captures. Forwarding's planted findings: two leafs that lost a spine adjacency, a Junos pod installing one of two uplinks, an SVI-attached leaf, a subnet hidden by a Reject aggregate, cross-site asymmetry through the edges, a stale capture and a shared management VLAN on every leaf. The Forwarding shots use den1 and den2; ams1 has no path to Denver and is there for Topology (see [README_Topology.md](README_Topology.md#demo-network-and-screenshots)).
 
 ```
 python tools/demo_lab.py --out /tmp/netlapse-demo
 NETLAPSE_CONFIG=/tmp/netlapse-demo/config.yaml NETLAPSE_ADMIN_PASSWORD=demo-pass-1 NETLAPSE_SKIP_TEMPLATE_DOWNLOAD=1 python -m netlapse serve
 ```
 
-`tools/screenshots.py` builds the lab, starts netlapse on it, drives the UI in headless Chromium and rewrites `screenshots/forwarding/`. It needs Playwright, and ffmpeg for `--gif`. Where Google Fonts can't be reached, `--fonts-dir` takes a fontsource folder with IBM Plex Sans and Mono so the page renders in its own fonts.
+`tools/screenshots.py` builds the lab, starts netlapse on it, drives the UI in headless Chromium and rewrites `screenshots/forwarding/` and `screenshots/topology/` (`--only forwarding` or `--only topology` for one). It needs Playwright, and ffmpeg for `--gif`. Where Google Fonts can't be reached, `--fonts-dir` takes a fontsource folder with IBM Plex Sans and Mono so the page renders in its own fonts.
 
 ```
 python tools/screenshots.py --gif

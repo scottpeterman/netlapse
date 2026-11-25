@@ -46,17 +46,17 @@ A network map built from the LLDP captures Netlapse already collects — no disc
 
 Sites are drawn as their own boxes, laid out independently and placed so sites joined by links sit side by side. The device list beside the map is searchable (`/` from anywhere), grouped by site, and flags devices with one-sided or unverified links.
 
-![Topology: three sites drawn as boxes — DEN1 and DEN2 side by side with their two inter-site links, AMS1 on its own — and the searchable device list grouped by site](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_map.png)
+![Topology: three sites drawn as boxes — Denver 1 above Denver 2, joined at their cores, Amsterdam 1 on its own — with the link legend counting 93 confirmed, 1 one-sided and 2 unverified](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_map.png)
 
 Because the source is versioned storage, the map can be drawn **as of** any stored time, and **Compare** shows what moved between two points — links added, removed, or changed state — with recent LLDP collection cycles offered as one-click windows:
 
-![Topology Compare across DEN1 and DEN2: a new leaf's two uplinks added in green, a re-patched leaf's old link removed and its new one added, everything untouched faded; the device list filtered to the four devices that changed](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare.png)
+![Topology Compare across Denver 1 and Denver 2 over two days: leaf17.den1's two new uplinks in green, leaf09.den2's re-patched spine link in orange, everything untouched faded; the device list filtered to the five devices that changed](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare_changed.png)
 
 Opening a device fills its dialog from stored captures at the map's time — interfaces, LLDP neighbors, ARP, MAC table, config, and a raw tab for every other capture (BGP, OSPF, routes, custom jobs) — with each tab naming the capture it came from and when it was collected. Tables copy as aligned text or download as CSV; raw captures copy or download.
 
 ![Device dialog for spine1.den1: the Interfaces tab sourced from the interfaces capture with its collection time, Copy and CSV buttons, and tabs for every capture the device has](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_device.png)
 
-Rendering is Secure Cartography's viewer, ported to run in the browser; the `map.json` export opens in SC2. Full detail, including the Junos and Arista notes for existing installs: [README_Topology.md](README_Topology.md).
+Rendering is Secure Cartography's viewer, ported to run in the browser; the `map.json` export opens in SC2. Full detail, with a screenshot walkthrough and the Junos and Arista notes for existing installs: [README_Topology.md](README_Topology.md).
 
 ## Forwarding
 
