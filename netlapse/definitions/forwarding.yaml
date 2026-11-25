@@ -1,0 +1,69 @@
+# forwarding.yaml — how the forwarding model picks endpoints and destinations.
+#
+# The model reads stored route, LLDP and interface-address captures and
+# answers "how does A reach B" without touching a device: longest-prefix match
+# on every device, one forwarding graph per destination, every endpoint pair
+# walked. Nothing here changes collection; it only decides what to model.
+#
+# This file is OPTIONAL. Without it the built-in defaults below apply. Drop a
+# copy next to captures.yaml / jobs.yaml (the definitions directory) and edit.
+#
+# ── Endpoints ───────────────────────────────────────────────────────────────
+# Devices that originate and receive traffic in the matrix — usually leaf/TOR
+# switches. Selected by DCIM role slug and/or a hostname regex (either match).
+#
+# ── Exclusions ──────────────────────────────────────────────────────────────
+# Devices left out of the model entirely: OOB switches, console servers, lab
+# gear sharing production addresses. Only devices with DCIM status "active"
+# are considered at all.
+#
+# ── Destinations ────────────────────────────────────────────────────────────
+# Each endpoint's destination is one of its connected subnets:
+#   source: unique_connected   connected subnets inside `within`, sized between
+#                              min_plen and max_plen, that no other endpoint
+#                              also has (a subnet on many endpoints is a shared
+#                              mgmt/OOB VLAN, not that endpoint's own). Largest
+#                              wins. `interface` (regex) narrows the choice,
+#                              e.g. '^(irb\.500|Vlan500)$'.
+#   source: list               explicit `list:` of {device, prefix}.
+# The probed host is subnet + host_offset.
+#
+# ── Captures ────────────────────────────────────────────────────────────────
+# capture_type names (captures.yaml `capture_type`, not the capture slug).
+# `addresses` is tried in order; every listed capture that exists is used.
+#
+# Junos: fib_only uses only next hops marked ">" (installed in the forwarding
+# table). Without a load-balance export policy that is one next hop even when
+# the RIB lists several — which is what the box actually forwards on.
+
+version: 1
+
+forwarding:
+  endpoints:
+    roles: [leaf]
+    match: null
+
+  exclude:
+    roles: []
+    match: '^(oob|c\d+[a-z]?\.)|-lab\.'
+
+  destinations:
+    source: unique_connected
+    within: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+    min_plen: 16
+    max_plen: 29
+    interface: null
+    host_offset: 10
+    list: []
+
+  vrf: default
+  fib_only: true
+
+  captures:
+    routes: routes
+    lldp: lldp
+    addresses: [ip_interfaces, interfaces]
+
+  # Devices whose route capture is this much older than the newest one are
+  # flagged in the report: a mixed-age model can show a half-finished change.
+  stale_minutes: 120

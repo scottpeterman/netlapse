@@ -56,3 +56,8 @@ jobs:
     capture: lldp-neighbors
     name: LLDP neighbors detail
     enabled: true
+
+  ip-interfaces:
+    capture: ip-interfaces
+    name: Interface addresses
+    enabled: true

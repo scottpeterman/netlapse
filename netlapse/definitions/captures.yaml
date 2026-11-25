@@ -77,6 +77,16 @@ captures:
       juniper_junos: show ethernet-switching table
     interval: 1800
 
+  ip-interfaces:
+    capture_type: ip_interfaces
+    description: Interface addresses
+    # Which device owns which address. The forwarding model uses it to turn a
+    # next-hop IP into a device when LLDP can't (SVI and LAG next hops).
+    command:
+      default: show ip interface brief
+      juniper_junos: show interfaces terse
+    interval: 3600
+
   lldp-neighbors:
     capture_type: lldp
     description: LLDP neighbors detail
