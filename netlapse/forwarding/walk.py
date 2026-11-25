@@ -117,7 +117,8 @@ class MatrixResult:
             "tor_summary": self.endpoint_summary,
             "pairs": {f"{a}|{b}": p for (a, b), p in self.pairs.items()},
             "actions": self.actions,
-            "devices": {n: {"site": model.site_of(n), "platform": s.device.get("platform_slug"),
+            "devices": {n: {"id": s.device.get("id"), "site": model.site_of(n),
+                            "platform": s.device.get("platform_slug"), "role": s.device.get("role_slug"),
                             "is_tor": s.endpoint} for n, s in model.by_node.items()},
         }
 
@@ -225,5 +226,6 @@ def trace(model: ForwardingModel, src: str, dest: str) -> dict:
             layers.append(nxt)
         frontier = nxt
     out.update({"src": node, "dest": label, "dest_endpoint": dst_node,
-                "layers": [[{"device": n, **actions[n]} for n in layer] for layer in layers]})
+                "layers": [[{"device": n, "id": model.by_node[n].device.get("id"),
+                             "site": model.site_of(n), **actions[n]} for n in layer] for layer in layers]})
     return out

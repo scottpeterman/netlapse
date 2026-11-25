@@ -182,9 +182,15 @@ class ForwardingModel:
             if pp:
                 dest_ints.append(pp[0] + (1 if pp[1] < 32 else 0))
         cover = {(p, di & MASKS[p]) for di in dest_ints for p in range(33)}
+        # Routes more specific than an endpoint subnet and inside it (a /32 to
+        # one server, a /25 split) are kept too, so a trace to any address in
+        # an endpoint subnet is exact without reloading the tables.
+        inside = {(d.plen, d.net) for d in self.destinations.values()}
+        inside_lens = sorted({p for p, _ in inside})
         for d in sorted(others, key=lambda x: (x.get("site_slug") or "", x["name"])):
             routes, info, when, n = self._routes(d)
-            kept = [r for r in routes if (r[1], r[0]) in cover]
+            kept = [r for r in routes if (r[1], r[0]) in cover
+                    or any(r[1] > p and (p, r[0] & MASKS[p]) in inside for p in inside_lens)]
             own_host = [r for r in routes if r[1] == 32 and r[2] in ("local", "conn") and (r[1], r[0]) not in cover]
             self._add(d, kept, info, when, n, endpoint=False)
             st = self.by_node[self.resolver.node_id_for(d)]
@@ -312,6 +318,16 @@ class ForwardingModel:
             k, name, how = self.resolve(node, nh_ip, ifname)
             targets.append({"k": k, "n": name, "nh": nh_ip, "if": ifname, "how": how})
         return {"t": "fwd", **base, "x": targets}
+
+    def covers(self, ip: str) -> bool:
+        """True when a trace to `ip` is exact on this model without reloading tables."""
+        pp = parse_prefix(ip if "/" in ip else f"{ip}/32")
+        if pp is None:
+            return False
+        a = pp[0]
+        if any((a & MASKS[d.plen]) == d.net for d in self.destinations.values()):
+            return True
+        return ip in self.extra_destinations
 
     def node_for_name(self, name: str) -> Optional[str]:
         if name in self.by_node:
