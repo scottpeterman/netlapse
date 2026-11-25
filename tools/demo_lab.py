@@ -69,6 +69,7 @@ MODELS = {
 }
 
 
+NIC_SWAP = "srv-leaf03-den1-02"
 OUI = {EOS: "001c.73", EOS_V2: "001c.73", JUNOS: "88e0.f3", "server": "0c42.a1"}
 
 
@@ -90,6 +91,8 @@ class Lab:
         self.routes = {}
         self.no_lldp = set()        # devices without an LLDP capture
         self.hide_lldp = set()      # (dev, neighbor) pairs a device doesn't report
+        self.transit = {}           # router -> [(peer ip, local if, peer AS, description)]
+        self.before = False         # building the state two days ago
         self._p2p = 0
 
     def dev(self, name, site, style, role):
@@ -120,7 +123,8 @@ class Lab:
     def server(self, leaf, ifn, idx, subnet_base):
         name = f"srv-{leaf.split('.')[0]}-{self.site[leaf]}-{idx:02d}"
         ip = f"{subnet_base}.{10 + idx}"
-        mac = _mac(name)
+        # srv-leaf03-den1-02 had its NIC replaced: a new MAC on the same IP
+        mac = _mac(name, "old") if (self.before and name == NIC_SWAP) else _mac(name)
         self.servers.setdefault(leaf, []).append((ifn, name, ip, mac))
         self.iface(leaf, ifn, f"SRV::{name}:eth0")
         self.lldp[leaf].append((ifn, name, "eth0"))
@@ -230,6 +234,8 @@ class Lab:
             out.append({"IP_ADDRESS": peer_ip, "MAC_ADDRESS": mac, "INTERFACE": f"{i}.0" if junos else i}
                        if junos else
                        {"ADDRESS": peer_ip, "AGE": "0:00:41", "MAC_ADDRESS": mac, "INTERFACE": i})
+        for peer_ip, ifn, asn, desc in self.transit.get(d, []):
+            out.append({"IP_ADDRESS": peer_ip, "MAC_ADDRESS": _mac(peer_ip, oui="3c61.04"), "INTERFACE": ifn})
         own_if = "irb.500" if junos else "Vlan500"
         for ifn, name, ip, mac in self.servers.get(d, []):
             out.append({"IP_ADDRESS": ip, "MAC_ADDRESS": mac, "INTERFACE": own_if} if junos else
@@ -260,6 +266,11 @@ class Lab:
                 if e["ip"]:
                     unit = i.split(".")[1] if "." in i else "0"
                     lines.append(f"set interfaces {base} unit {unit} family inet address {e['ip']}")
+            for peer_ip, ifn, asn, desc in self.transit.get(d, []):
+                lines += [f"set protocols bgp group transit_v4 neighbor {peer_ip} description {desc}",
+                          f"set protocols bgp group transit_v4 neighbor {peer_ip} import transit_in",
+                          f"set protocols bgp group transit_v4 neighbor {peer_ip} export announce_dc",
+                          f"set protocols bgp group transit_v4 neighbor {peer_ip} peer-as {asn}"]
             lines += ["set protocols ospf area 0.0.0.0 interface lo0.0 passive",
                       "set protocols lldp interface all"]
             return "\n".join(lines) + "\n"
@@ -281,9 +292,95 @@ class Lab:
         return "\n".join(lines) + "\n"
 
 
+    # ── raw CLI text, so Raw Output, diffs and One Search read like a device ──
+
+    @staticmethod
+    def _colon(mac):
+        h = mac.replace(".", "")
+        return ":".join(h[i:i + 2] for i in range(0, 12, 2))
+
+    def arp_text(self, d, recs):
+        if self.style[d] == JUNOS:
+            rows = ["MAC Address       Address         Interface                Flags"]
+            rows += [f"{self._colon(r['MAC_ADDRESS'])} {r['IP_ADDRESS']:<15} {r['INTERFACE']:<24} none" for r in recs]
+            return "\n".join(rows + [f"Total entries: {len(recs)}"]) + "\n"
+        rows = ["Address         Age (sec)  Hardware Addr   Interface"]
+        rows += [f"{r['ADDRESS']:<15} {r['AGE']:>9}  {r['MAC_ADDRESS']}  {r['INTERFACE']}" for r in recs]
+        return "\n".join(rows) + "\n"
+
+    def mac_text(self, d, recs):
+        rows = ["          Mac Address Table", "-" * 66, "",
+                "Vlan    Mac Address       Type        Ports      Moves   Last Move",
+                "----    -----------       ----        -----      -----   ---------"]
+        rows += [f" {r['VLAN']:<6} {r['DESTINATION_ADDRESS']}    {r['TYPE']:<11} {r['DESTINATION_PORT'].replace('Ethernet', 'Et'):<10} 1       12 days, 4:11:52 ago"
+                 for r in recs]
+        return "\n".join(rows + [f"Total Mac Addresses for this criterion: {len(recs)}"]) + "\n"
+
+    def lldp_text(self, d, recs):
+        if self.style[d] != JUNOS:
+            return None
+        rows = ["Local Interface    Parent Interface    Chassis Id          Port info          System Name"]
+        rows += [f"{r['LOCAL_INTERFACE']:<18} -                   {self._colon(r['CHASSIS_ID']):<19} {r['NEIGHBOR_INTERFACE']:<18} {r['NEIGHBOR_NAME']}"
+                 for r in recs]
+        return "\n".join(rows) + "\n"
+
+    def routes_text(self, d):
+        rs = sorted(self.routes[d], key=lambda r: tuple(int(x) for x in r["prefix"].replace("/", ".").split(".")))
+        if self.style[d] == JUNOS:
+            n = len(rs)
+            out = ["", f"inet.0: {n} destinations, {n} routes ({n} active, 0 holddown, 0 hidden)",
+                   "+ = Active Route, - = Last Active, * = Both", ""]
+            for r in rs:
+                pfx = f"{r['prefix']:<18} "
+                if r["kind"] == "conn":
+                    out += [pfx + "*[Direct/0] 12w3d 04:11:52", f"                    >  via {r['if']}"]
+                elif r["kind"] == "local":
+                    out += [pfx + "*[Local/0] 12w3d 04:11:52", f"                       Local via {r['if']}"]
+                elif r["kind"] == "drop":
+                    out += [pfx + "*[Aggregate/130] 12w3d 04:11:52", "                       Reject"]
+                else:
+                    proto = "BGP/170" if r["proto"] == "BGP" else "OSPF/10"
+                    head = f"*[{proto}] 12w3d 04:11:52, " + ("localpref 100" if proto == "BGP/170" else "metric 20")
+                    out.append(pfx + head)
+                    if proto == "BGP/170":
+                        out.append("                      AS path: 64500 I, validation-state: unverified")
+                    sel = r["sel"] or [">"] * len(r["hops"])
+                    for (h, i), mark in zip(r["hops"], sel):
+                        i = i if "." in i else i + ".0"
+                        out.append(f"                    {mark or ' '} to {h} via {i}")
+            return "\n".join(out) + "\n"
+        out = ["VRF: default", "Codes: C - connected, S - static, O - OSPF, B I - iBGP, B E - eBGP", "",
+               "Gateway of last resort is not set" if not any(r["prefix"] == "0.0.0.0/0" for r in rs) else
+               "Gateway of last resort:", ""]
+        for r in rs:
+            code = {"C": "C", "S": "S"}.get(r["proto"], r["proto"])
+            if r["kind"] == "conn":
+                out.append(f" {code:<8} {r['prefix']} is directly connected, {r['if']}")
+                continue
+            hops = r["hops"] or [("", "")]
+            out.append(f" {code:<8} {r['prefix']} [110/20] via {hops[0][0]}, {hops[0][1]}")
+            for h, i in hops[1:]:
+                out.append(f"{'':>{len(r['prefix']) + 20}}via {h}, {i}")
+        return "\n".join(out) + "\n"
+
+    def bgp_records(self, d):
+        return [{"PEER_IP": ip, "PEER_AS": asn, "IN_PKT": "4593", "OUT_PKT": "3057", "OUT_Q": "0",
+                 "FLAPS": "0", "LAST_UP_DOWN": "12w3d 4:11:52", "STATE": "Establ", "ACTIVE_RECV_ACC": "880412/912310/912310/0"}
+                for ip, ifn, asn, desc in self.transit.get(d, [])]
+
+    def bgp_text(self, d, recs):
+        rows = ["Threading mode: BGP I/O", "Default eBGP mode: advertise - accept, receive - accept",
+                f"Groups: 1 Peers: {len(recs)} Down peers: 0", "",
+                "Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State|#Active/Received/Accepted/Damped..."]
+        rows += [f"{r['PEER_IP']:<20} {r['PEER_AS']:>7} {r['IN_PKT']:>10} {r['OUT_PKT']:>10} {r['OUT_Q']:>7} {r['FLAPS']:>7} {r['LAST_UP_DOWN']:>11} {r['STATE']}"
+                 for r in recs]
+        return "\n".join(rows) + "\n"
+
+
 def build(before: bool) -> Lab:
     """The demo network. before=True is the state two days ago."""
     L = Lab()
+    L.before = before
     pod_a = [f"leaf{n:02d}.den1" for n in range(1, 17)] + ([] if before else ["leaf17.den1"])
     pod_b = [f"leaf{n:02d}.den1" for n in range(21, 27)]
     den2 = [f"leaf{n:02d}.den2" for n in range(1, 13)]
@@ -424,6 +521,11 @@ def build(before: bool) -> Lab:
     L.rt("core1.den1", "0.0.0.0/0", [L.via("core1.den1", "et-0/0/10"), L.via("core1.den1", "et-0/0/11")],
          proto="OSPF", sel=[">", ">"])
     # ── den1 edges ──
+    L.transit = {
+        "edge1.den1": [("198.51.100.1", "et-0/1/0.0", "64500", "TRANSIT-A"), ("203.0.113.9", "et-0/1/1.0", "64510", "TRANSIT-B")],
+        "edge2.den1": [("198.51.100.5", "et-0/1/0.0", "64500", "TRANSIT-A"), ("203.0.113.13", "et-0/1/1.0", "64510", "TRANSIT-B")],
+        "edge1.ams1": [("203.0.113.33", "et-0/1/0.0", "64520", "TRANSIT-C")],
+    }
     for e, transit in (("edge1.den1", "198.51.100.1"), ("edge2.den1", "198.51.100.5")):
         for leaf in pod_a:
             if leaf in broken:
@@ -433,8 +535,10 @@ def build(before: bool) -> Lab:
         for leaf in pod_b:
             L.rt(e, subnet(leaf), [L.via(e, "et-0/0/10")], proto="OSPF")
         L.rt(e, "10.20.0.0/16", [L.via(e, "et-0/0/10")], proto="OSPF")
-        L.rt(e, "0.0.0.0/0", [(transit, "et-0/1/0.0"), ("203.0.113.9", "et-0/1/1.0")], proto="BGP", sel=[">", ""])
+        second = L.transit[e][1][0]
+        L.rt(e, "0.0.0.0/0", [(transit, "et-0/1/0.0"), (second, "et-0/1/1.0")], proto="BGP", sel=[">", ""])
         L.iface(e, "et-0/1/0", "TRANSIT::as64500", transit.rsplit(".", 1)[0] + f".{int(transit.rsplit('.', 1)[1]) + 1}/30")
+        L.iface(e, "et-0/1/1", "TRANSIT::as64510", second.rsplit(".", 1)[0] + f".{int(second.rsplit('.', 1)[1]) + 1}/30")
     # ── den2 ──
     for s in ("spine1.den2", "spine2.den2"):
         for leaf in den2:
@@ -463,6 +567,7 @@ def build(before: bool) -> Lab:
         L.rt("edge1.ams1", subnet(leaf), [L.via("edge1.ams1", "et-0/0/1"), L.via("edge1.ams1", "et-0/0/2")],
              proto="OSPF", sel=[">", ">"])
     L.rt("edge1.ams1", "0.0.0.0/0", [("203.0.113.33", "et-0/1/0.0")], proto="BGP")
+    L.iface("edge1.ams1", "et-0/1/0", "TRANSIT::as64520", "203.0.113.34/30")
     L.rt("oob1.den1", "0.0.0.0/0", [L.via("oob1.den1", "Ethernet1")], proto="S")
 
     # Junos Local /32s, EOS loopbacks
@@ -491,7 +596,7 @@ COMMANDS = {
     JUNOS: {"routes": "show route", "lldp": "show lldp neighbors", "ip_interfaces": "show interfaces terse",
             "interfaces": "show interfaces terse", "arp": "show arp no-resolve",
             "mac": "show ethernet-switching table", "version": "show version",
-            "config": "show configuration | display set"},
+            "config": "show configuration | display set", "bgp": "show bgp summary"},
     "eos": {"routes": "show ip route", "lldp": "show lldp neighbors detail", "ip_interfaces": "show ip interface brief",
             "interfaces": "show interfaces", "arp": "show ip arp", "mac": "show mac address-table",
             "version": "show version", "config": "show running-config"},
@@ -533,14 +638,22 @@ def seed(out: Path, now: datetime):
             t = when - timedelta(hours=8) if (lab is lab_now and name == "edge2.den1") else when
             cmd = COMMANDS[JUNOS if style == JUNOS else "eos"]
             put = lambda ct, recs, raw=None: _store(storage, site, name, ct, recs, t, cmd[ct], raw)  # noqa: E731
-            put("routes", lab.route_records(name))
+            put("routes", lab.route_records(name), lab.routes_text(name))
             if name not in lab.no_lldp:
-                put("lldp", lab.lldp_records(name))
+                recs = lab.lldp_records(name)
+                put("lldp", recs, lab.lldp_text(name, recs))
             put("ip_interfaces", lab.addr_records(name))
             put("interfaces", lab.interface_records(name))
-            put("arp", lab.arp_records(name))
-            if role == "leaf":
+            recs = lab.arp_records(name)
+            put("arp", recs, lab.arp_text(name, recs))
+            if role == "leaf" and style != JUNOS:
+                recs = lab.mac_records(name)
+                put("mac", recs, lab.mac_text(name, recs))
+            elif role == "leaf":
                 put("mac", lab.mac_records(name))
+            if lab.transit.get(name):
+                recs = lab.bgp_records(name)
+                put("bgp", recs, lab.bgp_text(name, recs))
             put("version", lab.version_records(name))
             put("config", None, lab.config_text(name))
             if lab is lab_before:
@@ -548,7 +661,16 @@ def seed(out: Path, now: datetime):
                 for f in ddir.glob("*.*"):
                     os.utime(f, (epoch_then, epoch_then))
 
+    # Template Lab, Parse Audit and One Search parse with the repo's template
+    # DB; a copy, so nothing done in the demo touches the original.
+    tdb = Path(__file__).resolve().parent.parent / "tfsm_templates.db"
+    parser = ""
+    if tdb.exists():
+        shutil.copy(tdb, out / "tfsm_templates.db")
+        parser = f"parser:\n  db_path: {out / 'tfsm_templates.db'}\n"
+
     (out / "config.yaml").write_text(
+        parser +
         f"storage:\n  backend: file\n  path: {out / 'data'}\n"
         f"dcim_db: {out / 'netlapse.db'}\n"
         f"definitions_dir: {out / 'defs'}\n"

@@ -2,13 +2,16 @@
 
 Network state, time-lapsed. An Oxidized replacement that collects *any* CLI output on a schedule — configs, ARP, BGP, routes, interfaces, LLDP — parses it into structured records, versions both the raw text and the parsed data, and answers "what changed?" with semantic diffs, a fleet change feed, one-box search, and a network map you can draw for any point in time.
 
-![Dashboard: fleet rollup across sites with the scheduled collection table — capture type, interval, last run, device coverage and duration per job](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/dashboard.png)
+![Netlapse tour: the dashboard; the topology map of three sites drawn from LLDP; Compare showing a new leaf's uplinks and a re-patched leaf; a device dialog's Neighbors tab; the Forwarding matrix and a pair traced in both directions; a semantic diff of a server NIC swap in ARP; One Search finding a transit peer's IP in config, ARP, BGP and routes; Template Lab matching a stored LLDP capture to its template](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/netlapse_tour.gif)
+
+*The tour runs on the synthetic demo network in `tools/demo_lab.py`; `python tools/screenshots.py --only tour` regenerates it.*
 
 > **Beta.** Netlapse runs in production, but expect rough edges and breaking changes while the API settles. Authentication is session-cookie login over scrypt-hashed local accounts with optional LDAP/Active Directory — adequate for an operator or a small team on a trusted network, not yet hardened for untrusted or multi-tenant exposure.
 
 **Contents:**
 [Why Netlapse](#why-netlapse) ·
 [Topology](#topology) ·
+[Forwarding](#forwarding) ·
 [One Search](#one-search) ·
 [Semantic Diff](#semantic-diff) ·
 [Change Feed](#change-feed) ·
