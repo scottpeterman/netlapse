@@ -3,6 +3,12 @@
 The Topology view draws the network from stored `lldp` captures. Nothing is
 collected for it: if the LLDP job runs, the map exists.
 
+![Topology of all sites: Denver 1, Denver 2 and Amsterdam 1 each drawn as its own box, the Denver sites joined at their cores; 54 devices, 96 links, 93 confirmed, 1 one-sided, 2 unverified, 120 unmanaged neighbors hidden](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_map.png)
+
+The screenshots on this page come from the synthetic demo network in `tools/demo_lab.py` (three sites, 54 devices, a few planted link problems and two days of history), regenerated with `tools/screenshots.py`. None of it is a real network.
+
+![Walkthrough: the Denver sites, Compare over two days with the Changed filter, then spine1.den1's device dialog on its Interfaces and Neighbors tabs](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_walkthrough.gif)
+
 ## How a link is decided
 
 Every LLDP record is one device's claim about one of its ports. Each claim's
@@ -17,6 +23,8 @@ site; the management address is the fallback). Then:
 | one-sided | far end is in DCIM and has LLDP data, but doesn't list us | dashed, orange |
 | unverified | far end is in DCIM but has no LLDP capture at that time | dotted |
 | unmanaged | far end is not in DCIM (servers, carrier gear) | dotted, red "?" node |
+
+![Amsterdam 1 with the Issues filter: edge1.ams1 has no LLDP capture so both its spine links are unverified (dotted); spine2.ams1 doesn't list leaf04.ams1, so that link is one-sided (dashed orange)](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_issues.png)
 
 A short-name or management-address match that lands in **another site** is
 only kept if the far end lists us back. Bare hostnames (`edge01`) and OOB
@@ -100,6 +108,12 @@ per browser).
   (commits less than 120 s apart are one cycle). Picking one compares the
   instant before the cycle against its end.
 
+![Compare across Denver 1 and Denver 2, two days ago against latest: added 3, removed 1. leaf17.den1's two uplinks are green; leaf09.den2's link to spine1.den2 moved from Ethernet9/1 to Ethernet14/1 and is drawn orange; the rest is faded](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare.png)
+
+The **Changed** filter narrows the list to the devices on either end of a change:
+
+![The same comparison with the Changed filter: leaf17.den1, spine1.den1 and spine2.den1 in Denver 1, leaf09.den2 and spine1.den2 in Denver 2, each with its link-change count](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare_changed.png)
+
 ## Device dialog
 
 Opening a device fills the dialog from netlapse, read at the map's time:
@@ -123,6 +137,12 @@ Opening a device fills the dialog from netlapse, read at the map's time:
 Captures run on their own intervals, so each tab says which capture it came
 from and when that capture was collected.
 
+![Device dialog for spine1.den1 on the Interfaces tab: the source capture and its collection time, a filter box, Copy and CSV, and one row per interface with description, IP, MAC, speed, MTU and status; tabs for Neighbors, ARP, Config, Collection and the raw ip_interfaces, Routes and version captures](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_device.png)
+
+![Hardware tab for leaf03.den1, filled from its version capture: model, serial, OS version, hardware revision and uptime](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_device_hardware.png)
+
+![MAC Table tab for leaf03.den1: three server MACs on Ethernet1 to Ethernet3 in VLAN 500, each joined to its IP from the leaf's own ARP table](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_device_mac.png)
+
 Every table has **Copy** (aligned plain text with a header rule, for tickets,
 chat and MOPs; empty columns dropped) and **CSV**; every raw capture has
 **Copy** and **Download**. Both export what is shown, so a filter narrows the
@@ -134,6 +154,10 @@ a "Please wait" message covers the dialog, because a multi-megabyte clipboard
 write can freeze the page for a while on some machines (clipboard managers,
 endpoint agents); Download never touches the clipboard and is instant. Each
 copy logs its duration to the browser console (`[netlapse] copied … in N ms`).
+
+The view follows the app theme:
+
+![Denver 2 in the dark theme, with core1.den1 drawn in its own Denver 1 box one link away](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_dark.png)
 
 ## Platform notes
 
@@ -179,3 +203,23 @@ omitted means latest. The `map` member of `/topology` is SC2 `map.json` with
 two additions per peer (`link_states`, parallel to `connections`) that SC2
 ignores, so the export opens in SC2 and imports through
 `netlapse_import_map.py`.
+
+## Demo network and screenshots
+
+`tools/demo_lab.py` builds a synthetic network into a scratch directory (DCIM database, file storage with two days of history, definitions and a `config.yaml`). It is the same lab the [Forwarding](README_Forwarding.md) screenshots use. For Topology it plants:
+
+- **Link states.** `edge1.ams1` is in DCIM with no LLDP capture, so its links are unverified; `spine2.ams1` leaves `leaf04.ams1` out of its LLDP table, so that link is one-sided.
+- **History.** Two days ago `leaf17.den1` had no LLDP data and `leaf09.den2` was patched to `spine1.den2` Ethernet9/1. Now `leaf17.den1` has both uplinks and `leaf09.den2` sits on Ethernet14/1. That gives Compare three added links, one removed, and an LLDP change point.
+- **Unmanaged neighbors.** Three servers running lldpd on every leaf; they show up with **Unmanaged neighbors** ticked.
+- **Device dialog data.** Every device has interfaces, ARP, version and config captures; leafs also have a MAC table whose entries join to their ARP. MACs use the Arista, Juniper and Mellanox OUIs.
+
+```
+python tools/demo_lab.py --out /tmp/netlapse-demo
+NETLAPSE_CONFIG=/tmp/netlapse-demo/config.yaml NETLAPSE_ADMIN_PASSWORD=demo-pass-1 NETLAPSE_SKIP_TEMPLATE_DOWNLOAD=1 python -m netlapse serve
+```
+
+`tools/screenshots.py` builds the lab, starts netlapse on it and rewrites `screenshots/topology/` (and `screenshots/forwarding/`) from headless Chromium. It needs Playwright, and ffmpeg for `--gif`. `--fonts-dir` takes a fontsource folder with IBM Plex Sans and Mono when Google Fonts can't be reached.
+
+```
+python tools/screenshots.py --only topology --gif
+```

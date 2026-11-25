@@ -114,6 +114,16 @@ class ForwardingModel:
 
     def _routes(self, d: dict):
         env, when = self.reader.parsed(d["site_slug"], d["name"], self.cfg.routes_capture)
+        # As of a past time, a capture whose raw text hasn't changed since is
+        # served from the current file, whose envelope carries the latest
+        # collection time. It was already true at as_of: report it as such.
+        as_of = self.reader.as_of
+        if as_of is not None and when is not None:
+            try:
+                if when.replace(tzinfo=None) > as_of.replace(tzinfo=None):
+                    when = as_of.replace(tzinfo=None)
+            except (TypeError, AttributeError):
+                pass
         recs = records_from_envelope(env) if env else []
         by_vrf, info = normalize_routes(recs, fib_only=self.cfg.fib_only)
         return by_vrf.get(self.cfg.vrf, []), info, when, len(recs)

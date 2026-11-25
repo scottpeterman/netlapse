@@ -46,17 +46,25 @@ A network map built from the LLDP captures Netlapse already collects — no disc
 
 Sites are drawn as their own boxes, laid out independently and placed so sites joined by links sit side by side. The device list beside the map is searchable (`/` from anywhere), grouped by site, and flags devices with one-sided or unverified links.
 
-![Topology: three sites drawn as boxes — DEN1 and DEN2 side by side with their two inter-site links, AMS1 on its own — and the searchable device list grouped by site](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_map.png)
+![Topology: three sites drawn as boxes — Denver 1 above Denver 2, joined at their cores, Amsterdam 1 on its own — with the link legend counting 93 confirmed, 1 one-sided and 2 unverified](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_map.png)
 
 Because the source is versioned storage, the map can be drawn **as of** any stored time, and **Compare** shows what moved between two points — links added, removed, or changed state — with recent LLDP collection cycles offered as one-click windows:
 
-![Topology Compare across DEN1 and DEN2: a new leaf's two uplinks added in green, a re-patched leaf's old link removed and its new one added, everything untouched faded; the device list filtered to the four devices that changed](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare.png)
+![Topology Compare across Denver 1 and Denver 2 over two days: leaf17.den1's two new uplinks in green, leaf09.den2's re-patched spine link in orange, everything untouched faded; the device list filtered to the five devices that changed](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_compare_changed.png)
 
 Opening a device fills its dialog from stored captures at the map's time — interfaces, LLDP neighbors, ARP, MAC table, config, and a raw tab for every other capture (BGP, OSPF, routes, custom jobs) — with each tab naming the capture it came from and when it was collected. Tables copy as aligned text or download as CSV; raw captures copy or download.
 
 ![Device dialog for spine1.den1: the Interfaces tab sourced from the interfaces capture with its collection time, Copy and CSV buttons, and tabs for every capture the device has](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/topology/topology_device.png)
 
-Rendering is Secure Cartography's viewer, ported to run in the browser; the `map.json` export opens in SC2. Full detail, including the Junos and Arista notes for existing installs: [README_Topology.md](README_Topology.md).
+Rendering is Secure Cartography's viewer, ported to run in the browser; the `map.json` export opens in SC2. Full detail, with a screenshot walkthrough and the Junos and Arista notes for existing installs: [README_Topology.md](README_Topology.md).
+
+## Forwarding
+
+The same stored captures answer **how does A reach B**. The forwarding model does a longest-prefix match on every device's stored route table, ties each next hop to a device by address ownership and LLDP, and follows the result: every leaf to every other leaf, both directions, without touching a device. It shows which paths leave on a single uplink, which return over different devices than they went out on, which ride a default or an aggregate, and which end in a black hole.
+
+![Forwarding: 35 leafs across DEN1 and DEN2 as a source-by-destination matrix colored by hop count; dots mark pairs whose return path crosses different devices, a red column is a leaf whose subnet ends in a Reject aggregate](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_overview.png)
+
+Click any cell for both directions hop by hop, or trace from any device to any address. Like Topology, the model can be built **as of** any stored time, so a change shows up as the matrix before and after. Full detail: [README_Forwarding.md](README_Forwarding.md).
 
 ## One Search
 

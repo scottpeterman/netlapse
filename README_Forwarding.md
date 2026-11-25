@@ -9,9 +9,49 @@ Two uses:
 
 Both are in the web UI under **Forwarding** (next to Topology), in the API, and on the CLI.
 
+![Forwarding view: site picker and as-of time, the den1 and den2 sites selected, summary cards (36 endpoints, 1260 directed pairs, 1225 delivered, 35 failed, 908 asymmetric) and the endpoint matrix colored by status and hop count](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_overview.png)
+
+The screenshots on this page come from the synthetic demo network in `tools/demo_lab.py` (the two Denver sites, 36 leafs, a handful of deliberate faults), regenerated with `tools/screenshots.py`. None of it is a real network.
+
 ## Web view
 
-`#/forwarding` builds the matrix for the selected sites, latest or as of a UTC time. Click a cell for both directions hop by hop: each device's matched prefix and whether it was specific, an aggregate or the default, each next hop and how it was tied to a device. Color the matrix by status and hop count, asymmetry, default/aggregate dependence, first-hop fanout or ECMP path count. The trace panel runs an offline fibtrace from any modeled device. Data quality lists stale captures, route tables that can't be modeled, endpoints without a destination and addresses owned by more than one device. Sites, time, selected pair and trace are in the URL, so a view can be bookmarked or shared.
+`#/forwarding` builds the matrix for the selected sites, latest or as of a UTC time. Sites, time, color mode, selected pair and trace are in the URL, so any view below can be bookmarked or shared.
+
+![Walkthrough: switching the matrix between status, asymmetry and fanout coloring, opening a cross-site pair, then tracing into a black hole](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_walkthrough.gif)
+
+**A pair, both directions.** Click a cell. Each hop shows the device, the prefix it matched and whether that was **specific**, an **aggregate** or the **default**, and each next hop with how it was tied to a device. Here a DEN2 leaf reaches a DEN1 leaf through both DEN1 edges, because core1 only carries DEN1 as an aggregate learned from them; the return path goes straight from the DEN1 spines to core1 and never touches an edge.
+
+![Pair view leaf05.den2 to leaf03.den1: forward six hops through core2, core1, both edges and both spines; reverse five hops through the spines and core1 with no edge; marked asymmetric, only forward: edge1.den1, edge2.den1](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_pair.png)
+
+**First-hop fanout.** Colored by fanout, every leaf that forwards on a single uplink to every destination stands out. In the demo that's three different causes: leaf07/08.den1 lost their spine2 adjacency, the Junos pod (leaf21–26) lists both uplinks in the RIB but installs one, and leaf20.den2 hangs off a single SVI.
+
+![Matrix colored by first-hop fanout: rows for leaf07.den1, leaf08.den1, leaf21 through leaf26.den1 and leaf20.den2 in orange, every other leaf blue](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_fanout.png)
+
+**As of a past time.** The same view two days earlier, before leaf07/08 lost their second uplink: their rows are blue. Comparing two times is how a change shows up.
+
+![Matrix colored by fanout as of two days earlier: leaf07.den1 and leaf08.den1 rows are blue, only the Junos pod and leaf20.den2 are orange](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_fanout_as_of.png)
+
+**Trace.** An offline fibtrace from any modeled device to an endpoint name, an address or a prefix. A trace to an endpoint, or to any address inside an endpoint subnet, answers from the cached model; anything else loads that address's covering routes first.
+
+![Trace from leaf03.den1 to 10.20.12.10: both spines and core1 forward on aggregates, core2 matches its 10.20.0.0/16 Reject aggregate and the trace ends in blackhole](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_trace_blackhole.png)
+
+The long way round: spine2.den1 lost its port to leaf07, so it reaches it through core1, both edges and spine1.
+
+![Trace from spine2.den1 to leaf07.den1: four hops via core1, edge1 and edge2, and spine1, delivered on leaf07's Vlan500](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_trace_long_way.png)
+
+**Data quality and per-endpoint summary.** Stale route captures, route tables that can't be modeled, endpoints without a destination, addresses owned by more than one device, and what was excluded. The summary ranks endpoints by delivery, asymmetry and fanout; a highlighted row has something to look at.
+
+![Data quality: edge2.den1 route capture 480 minutes behind the newest; excluded oob1.den1; capture time range; config path](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_quality.png)
+
+![Per-endpoint summary table: subnet, delivered out and in, asymmetric count, fanout min and max, single-uplink destinations, max hops](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_summary.png)
+
+The view follows the app theme:
+
+![Forwarding view in the dark theme](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_dark.png)
+
+**Report** opens the same matrix as one self-contained HTML file (light theme, data embedded, no external assets) for mail or a ticket; **CSV** downloads one row per directed pair.
+
+![Standalone HTML report: header with sites and capture time, summary cards, the matrix and its legend](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_report.png)
 
 ## API
 
@@ -103,3 +143,18 @@ Per hop, the match class says what the device forwarded on: **specific** (the de
 - **Overlays** (VXLAN/EVPN, GRE) are terminals: the model has no VTEP-to-device mapping.
 - **Junos ECMP**: with `fib_only: true` (default) only next hops marked `>` count, which is what's installed without a load-balance export policy.
 - **Capture skew**: devices are collected at different times. The report lists route captures more than `stale_minutes` behind the newest, because a model straddling a change window can show a half-finished state.
+
+## Demo network and screenshots
+
+`tools/demo_lab.py` builds a synthetic three-site network into a scratch directory: DCIM database, file storage with two days of history, definitions and a `config.yaml`. 54 devices (EOS and Junos, both EOS route template shapes), each with routes, LLDP, interface addresses, interfaces, ARP, MAC table (leafs), version and config captures. Forwarding's planted findings: two leafs that lost a spine adjacency, a Junos pod installing one of two uplinks, an SVI-attached leaf, a subnet hidden by a Reject aggregate, cross-site asymmetry through the edges, a stale capture and a shared management VLAN on every leaf. The Forwarding shots use den1 and den2; ams1 has no path to Denver and is there for Topology (see [README_Topology.md](README_Topology.md#demo-network-and-screenshots)).
+
+```
+python tools/demo_lab.py --out /tmp/netlapse-demo
+NETLAPSE_CONFIG=/tmp/netlapse-demo/config.yaml NETLAPSE_ADMIN_PASSWORD=demo-pass-1 NETLAPSE_SKIP_TEMPLATE_DOWNLOAD=1 python -m netlapse serve
+```
+
+`tools/screenshots.py` builds the lab, starts netlapse on it, drives the UI in headless Chromium and rewrites `screenshots/forwarding/` and `screenshots/topology/` (`--only forwarding` or `--only topology` for one). It needs Playwright, and ffmpeg for `--gif`. Where Google Fonts can't be reached, `--fonts-dir` takes a fontsource folder with IBM Plex Sans and Mono so the page renders in its own fonts.
+
+```
+python tools/screenshots.py --gif
+```
