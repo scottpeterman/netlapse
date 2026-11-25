@@ -158,6 +158,13 @@ export const api = {
         changes: (q) => request('/topology/changes?' + q),
     },
 
+    // ── Forwarding model (offline trace + endpoint matrix) — q is a query string ──
+    forwarding: {
+        matrix: (q) => request('/forwarding/matrix?' + q),
+        trace:  (q) => request('/forwarding/trace?' + q),
+        check:  (q) => request('/forwarding/check?' + q),
+    },
+
     changes: {
         candidates: (params = {}) =>
             request('/changes/candidates?' + new URLSearchParams(params)),

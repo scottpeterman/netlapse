@@ -7,6 +7,24 @@ Two uses:
 - **trace**: an offline fibtrace from one device to an address, prefix or endpoint.
 - **matrix**: every endpoint (leaf/TOR) to every other endpoint, both directions, with an HTML heatmap, CSV and JSON.
 
+Both are in the web UI under **Forwarding** (next to Topology), in the API, and on the CLI.
+
+## Web view
+
+`#/forwarding` builds the matrix for the selected sites, latest or as of a UTC time. Click a cell for both directions hop by hop: each device's matched prefix and whether it was specific, an aggregate or the default, each next hop and how it was tied to a device. Color the matrix by status and hop count, asymmetry, default/aggregate dependence, first-hop fanout or ECMP path count. The trace panel runs an offline fibtrace from any modeled device. Data quality lists stale captures, route tables that can't be modeled, endpoints without a destination and addresses owned by more than one device. Sites, time, selected pair and trace are in the URL, so a view can be bookmarked or shared.
+
+## API
+
+| Endpoint | |
+|---|---|
+| `GET /api/v1/forwarding/matrix?site=a,b&as_of=&refresh=1` | matrix JSON plus `cache` info |
+| `GET /api/v1/forwarding/trace?src=&dest=&site=&as_of=` | offline trace with per-hop layers |
+| `GET /api/v1/forwarding/check?site=&as_of=` | per-device readiness |
+| `GET /api/v1/forwarding/report?site=&as_of=` | the standalone HTML report |
+| `GET /api/v1/forwarding/pairs.csv?site=&as_of=` | one row per directed pair |
+
+The model is built once per (sites, as_of) and cached. For "latest" the cache key includes the modification time of every in-scope route, LLDP and address capture, so the first request after a collection run rebuilds and the rest reuse it; `refresh=1` forces a rebuild. A trace to an endpoint or any address inside an endpoint subnet uses the cached model. A trace to anything else (a transit prefix, an Internet address) loads that address's covering routes in a one-off model, which takes about as long as a cold build.
+
 ```
 netlapse forwarding check --site iad1
 netlapse forwarding trace tor424.iad2 10.7.22.10

@@ -27,6 +27,7 @@ const views = {
     audit:       () => import('./views/audit.js'),
     changes:     () => import('./views/changes.js'),
     topology:    () => import('./views/topology.js'),
+    forwarding:  () => import('./views/forwarding.js'),
     users:       () => import('./views/users.js'),
     setup:       () => import('./views/setup.js'),
 };
@@ -47,6 +48,7 @@ const VIEW_TO_NAV = {
     audit: 'audit',
     changes: 'changes',
     topology: 'topology',
+    forwarding: 'forwarding',
     users: 'users',
     setup: 'setup',
 };
@@ -66,6 +68,7 @@ const VIEW_TITLES = {
     audit: 'Parse Audit',
     changes: 'Changes',
     topology: 'Topology',
+    forwarding: 'Forwarding',
     users: 'Users',
     setup: 'Setup',
 };
