@@ -16,6 +16,9 @@ Subcommands:
     python -m netlapse backup list      # List backups
     python -m netlapse restore ARCHIVE  # Stage a restore (applied now if daemon is stopped)
     python -m netlapse token --name mcp [--collect]   # New read-only API token + config snippet
+    python -m netlapse forwarding matrix   # Endpoint-to-endpoint forwarding matrix (HTML/JSON/CSV)
+    python -m netlapse forwarding trace SRC DEST       # Offline fibtrace from stored captures
+    python -m netlapse forwarding check    # Per-device data readiness for the forwarding model
 """
 import sys
 import os
@@ -55,6 +58,11 @@ def main():
         sys.exit(_cli_restore(args[1:]))
     if args and args[0] == "token":
         sys.exit(_cli_token(args[1:]))
+
+    # ── forwarding ───────────────────────────────────────────────────
+    if args and args[0] == "forwarding":
+        from netlapse.forwarding.cli import cli_forwarding
+        sys.exit(cli_forwarding(args[1:]))
 
     # ── cleanup ──────────────────────────────────────────────────────
     if args and args[0] == "cleanup":
