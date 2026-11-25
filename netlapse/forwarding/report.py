@@ -52,8 +52,8 @@ PAGE = r"""<!DOCTYPE html>
   .dir { margin-bottom: 14px; }
   .dir h3 { font-size: 13px; margin: 0 0 6px; }
   .dir .sum { color: var(--muted); margin-bottom: 6px; }
-  .layers { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
-  .layer { display: flex; flex-direction: column; gap: 6px; min-width: 210px; }
+  .layers { display: flex; flex-wrap: wrap; gap: 10px; padding-bottom: 4px; }
+  .layer { display: flex; flex-direction: column; gap: 6px; width: 260px; }
   .layer .hop { color: var(--muted); font-size: 11px; }
   .node { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 5px 7px; background: #fbfcfe; }
   .node .n { font-weight: 600; }
@@ -121,10 +121,8 @@ const tors = D.tors.map(t => t.name);
 const site = Object.fromEntries(D.tors.map(t => [t.name, t.site]));
 const P = D.pairs;
 // short labels for matrix headers only when unique; node boxes always use full names
-const _sh = {}; const _cnt = {};
-tors.forEach(t => { const s = t.replace(/\.[^.]+$/, ''); _cnt[s] = (_cnt[s] || 0) + 1; });
-tors.forEach(t => { const s = t.replace(/\.[^.]+$/, ''); _sh[t] = _cnt[s] > 1 ? t : s; });
-const short = n => _sh[n] || n;
+const _keepFull = new Set(tors.map(t => t.replace(/\.[^.]+$/, ''))).size < tors.length;
+const short = n => _keepFull ? n : n.replace(/\.[^.]+$/, '');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ---------- header + cards

@@ -58,6 +58,14 @@ Opening a device fills its dialog from stored captures at the map's time — int
 
 Rendering is Secure Cartography's viewer, ported to run in the browser; the `map.json` export opens in SC2. Full detail, including the Junos and Arista notes for existing installs: [README_Topology.md](README_Topology.md).
 
+## Forwarding
+
+The same stored captures answer **how does A reach B**. The forwarding model does a longest-prefix match on every device's stored route table, ties each next hop to a device by address ownership and LLDP, and follows the result: every leaf to every other leaf, both directions, without touching a device. It shows which paths leave on a single uplink, which return over different devices than they went out on, which ride a default or an aggregate, and which end in a black hole.
+
+![Forwarding: 35 leafs across DEN1 and DEN2 as a source-by-destination matrix colored by hop count; dots mark pairs whose return path crosses different devices, a red column is a leaf whose subnet ends in a Reject aggregate](https://raw.githubusercontent.com/scottpeterman/netlapse/refs/heads/main/screenshots/forwarding/forwarding_overview.png)
+
+Click any cell for both directions hop by hop, or trace from any device to any address. Like Topology, the model can be built **as of** any stored time, so a change shows up as the matrix before and after. Full detail: [README_Forwarding.md](README_Forwarding.md).
+
 ## One Search
 
 Type one token — an IP, a MAC, an ASN, a hostname, a serial — and get *everything* that references it across the whole fleet, grouped by what it means. It's the structured version of the 2 AM `grep`: instead of grepping one device at a time, you ask once and the answer comes back organized.

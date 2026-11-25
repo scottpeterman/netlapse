@@ -44,7 +44,7 @@ function readHash() {
     _asOf = q.get('as_of') || '';
     _pair = q.get('pair') || '';
     _trace = q.get('trace') || '';
-    _mode = q.get('color') || _mode;
+    _mode = q.get('color') || 'status';
 }
 
 function writeHash() {
@@ -100,8 +100,8 @@ export function render() {
             .fw-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-muted); }
             .fw-sw { display:inline-block; width:12px; height:12px; border-radius:2px; vertical-align:-2px;
                      margin-right:4px; border:1px solid rgba(0,0,0,.08); position:relative; }
-            .fw-layers { display:flex; gap:10px; overflow-x:auto; padding-bottom:4px; }
-            .fw-layer { display:flex; flex-direction:column; gap:6px; min-width:220px; }
+            .fw-layers { display:flex; flex-wrap:wrap; gap:10px; padding-bottom:4px; }
+            .fw-layer { display:flex; flex-direction:column; gap:6px; width:260px; }
             .fw-hop { font-size:11px; color:var(--text-faint); }
             .fw-node { border:1px solid var(--border); border-left:4px solid var(--blue); border-radius:var(--r);
                        padding:6px 8px; background:var(--surface-alt); font-size:12px; }
@@ -376,12 +376,12 @@ function legend(sc) {
 // ── matrix ───────────────────────────────────────────────────────────
 
 function labels() {
+    // Drop the site suffix only when every short name stays unique; otherwise
+    // keep full names everywhere so the axis reads consistently.
     const tors = _data.tors.map(t => t.name);
-    const cnt = {};
-    tors.forEach(t => { const s = short(t); cnt[s] = (cnt[s] || 0) + 1; });
-    const out = {};
-    tors.forEach(t => { out[t] = cnt[short(t)] > 1 ? t : short(t); });
-    return out;
+    const shorts = new Set(tors.map(short));
+    const keepFull = shorts.size < tors.length;
+    return Object.fromEntries(tors.map(t => [t, keepFull ? t : short(t)]));
 }
 
 function renderMatrix() {
