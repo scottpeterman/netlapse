@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import os
 import shutil
 import subprocess
@@ -336,7 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 async def tour(s, root: Path, then_iso: str):
-    """One recorded walk through the headline features: screenshots/netlapse_tour.gif."""
+    """One recorded walk through the headline features: screenshots/netlapse_tour.gif.
+    Ends on a still of LibreNMS reading configs from Netlapse (screenshots/LibreNMS/Diff.png)."""
     vctx, p = await s.video_page({"width": 1440, "height": 810})
     await vctx.add_init_script(CAPTION_INIT)
 
@@ -389,14 +391,17 @@ async def tour(s, root: Path, then_iso: str):
     # 4. forwarding matrix
     await cap("Forwarding: every TOR to every TOR", "Computed from stored route tables — the red column is a subnet hidden by a Reject aggregate")
     await nav("#/forwarding?site=den1,den2", "#fw-mx td[data-k]")
-    await p.wait_for_timeout(3800)
+    # zoom out so the cards and the whole matrix fit, like forwarding_overview.png
+    await p.evaluate("document.getElementById('content').style.zoom = '0.72'")
+    await p.wait_for_timeout(4200)
+    await p.evaluate("document.getElementById('content').style.zoom = ''")
 
     # 5. a pair, both directions
+    await cap("Both directions, hop by hop", "Asymmetric paths called out, with the route each hop used")
     await p.click('#fw-mx td[data-k="leaf05.den2|leaf03.den1"]')
     await p.wait_for_selector("#fw-detail .fw-layers")
     await p.evaluate("document.getElementById('fw-detail').scrollIntoView({block: 'start'})")
     await p.evaluate("window.scrollBy(0, -70)")
-    await cap("Both directions, hop by hop", "Asymmetric paths called out, with the route each hop used")
     await p.wait_for_timeout(3800)
 
     # 6. semantic diff: the NIC swap on leaf03.den1
@@ -428,6 +433,28 @@ async def tour(s, root: Path, then_iso: str):
     await p.click("#lab-test-db")
     await p.wait_for_selector("text=juniper_junos_show_lldp_neighbors", timeout=30000)
     await p.wait_for_timeout(3600)
+
+    # 9. LibreNMS reading configs and diffs from Netlapse (a still from a lab
+    #    LibreNMS; no LibreNMS runs here). Last, since it leaves the app.
+    shot = ROOT / "screenshots" / "LibreNMS" / "Diff.png"
+    if shot.exists():
+        img = base64.b64encode(shot.read_bytes()).decode()
+        await p.set_content(f"""<!DOCTYPE html><html><head>
+            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap">
+            <style>
+            body {{ margin:0; height:100vh; background:#f3f4f6; display:flex; justify-content:center;
+                    align-items:flex-start; font-family:'IBM Plex Sans',system-ui,sans-serif; }}
+            img {{ margin-top:22px; max-width:1380px; max-height:640px; border-radius:8px;
+                   box-shadow:0 6px 24px rgba(0,0,0,.18); background:#fff; }}
+            #cap {{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%);
+                    background:rgba(15,23,42,.93); color:#fff; padding:11px 22px 12px; border-radius:10px;
+                    box-shadow:0 8px 28px rgba(0,0,0,.28); text-align:center; max-width:78%; }}
+            </style></head><body><img src="data:image/png;base64,{img}">
+            <div id="cap"><div style="font-weight:600;font-size:19px">Drop-in for Oxidized</div>
+            <div style="font-weight:400;font-size:14.5px;opacity:.82;margin-top:3px">LibreNMS's own Config tab, showing versions and diffs served by Netlapse</div></div>
+            </body></html>""")
+        await p.evaluate("document.fonts.ready")
+        await p.wait_for_timeout(4200)
 
     await vctx.close()
     make_gif(await p.video.path(), root / "netlapse_tour.gif", width=1200, start=max(0.0, lead_in - 0.2))
