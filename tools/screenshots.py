@@ -4,7 +4,8 @@ screenshots.py — regenerate the Forwarding and Topology documentation screensh
 
 Builds the synthetic demo network (tools/demo_lab.py), starts netlapse on
 it, drives the web UI in headless Chromium and writes PNGs (and optionally
-animated GIFs) to screenshots/forwarding/ and screenshots/topology/.
+animated GIFs) to screenshots/forwarding/ and screenshots/topology/, plus a
+feature tour, screenshots/netlapse_tour.gif (with --gif, or --only tour).
 Nothing real is shown: every hostname and address comes from the demo lab.
 
 Needs Playwright (pip install playwright; playwright install chromium) and,
@@ -15,6 +16,7 @@ and the page gets them locally instead of falling back to system fonts.
 
     python tools/screenshots.py
     python tools/screenshots.py --only topology
+    python tools/screenshots.py --only tour
     python tools/screenshots.py --gif --chrome /usr/bin/google-chrome --fonts-dir /tmp/fonts/node_modules/@fontsource
 """
 
@@ -73,15 +75,16 @@ def rel(path: Path) -> str:
     return str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path)
 
 
-def make_gif(video_path, gif: Path):
+def make_gif(video_path, gif: Path, width=1000, start=0.0):
     if not (video_path and shutil.which("ffmpeg")):
         return
     palette = gif.with_name("_palette.png")
-    # Small enough to live in the repo: 4 fps, 1000 wide, 64-color palette.
-    vf = "fps=4,scale=1000:-1:flags=lanczos"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", video_path, "-vf",
+    # Small enough to live in the repo: 4 fps, 64-color palette.
+    vf = f"fps=4,scale={width}:-1:flags=lanczos"
+    trim = ["-ss", f"{start:.2f}"] if start else []
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *trim, "-i", video_path, "-vf",
                     f"{vf},palettegen=max_colors=64:stats_mode=diff", str(palette)], check=True)
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", video_path, "-i", str(palette), "-lavfi",
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *trim, "-i", video_path, "-i", str(palette), "-lavfi",
                     f"{vf} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
                     str(gif)], check=True)
     palette.unlink(missing_ok=True)
@@ -213,7 +216,7 @@ class Shooter:
     @staticmethod
     async def topo_ready(p, settle=2500):
         """The device list is filled and the iframe's map has laid out."""
-        await p.wait_for_selector("#tp-list .tp-row", timeout=120000)
+        await p.wait_for_selector("#tp-list .tp-row", state="attached", timeout=120000)
         await p.wait_for_function(
             "() => { const f = document.getElementById('topo-frame');"
             " const v = f && f.contentWindow && f.contentWindow.TopologyViewer;"
@@ -306,6 +309,130 @@ class Shooter:
             make_gif(await vp.video.path(), out / "topology_walkthrough.gif")
 
 
+# The tour's caption lives in sessionStorage and is redrawn on every page load,
+# so a scene that needs a reload has its caption from the first frame.
+CAPTION_INIT = """
+window.__tourCap = ([title, sub]) => {
+    let el = document.getElementById('tour-cap');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'tour-cap';
+        document.body.appendChild(el);
+    }
+    el.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2147483647;' +
+        'background:rgba(15,23,42,.93);color:#fff;padding:11px 22px 12px;border-radius:10px;' +
+        'font-family:"IBM Plex Sans",system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28);' +
+        'text-align:center;max-width:78%;pointer-events:none';
+    el.innerHTML = '<div style="font-weight:600;font-size:19px">' + title + '</div>' +
+        '<div style="font-weight:400;font-size:14.5px;opacity:.82;margin-top:3px">' + sub + '</div>';
+};
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const t = sessionStorage.getItem('tour-cap');
+        if (t) window.__tourCap(JSON.parse(t));
+    } catch (e) { /* storage off */ }
+});
+"""
+
+
+async def tour(s, root: Path, then_iso: str):
+    """One recorded walk through the headline features: screenshots/netlapse_tour.gif."""
+    vctx, p = await s.video_page({"width": 1440, "height": 810})
+    await vctx.add_init_script(CAPTION_INIT)
+
+    async def cap(title, sub):
+        await p.evaluate("t => { sessionStorage.setItem('tour-cap', JSON.stringify(t)); window.__tourCap(t); }",
+                         [title, sub])
+
+    async def topo_list(shown):
+        await p.evaluate("v => localStorage.setItem('netlapse.topology.panel', v)", "open" if shown else "closed")
+
+    async def ids():
+        return {d["name"]: d["id"] for d in (await (await p.request.get(f"{BASE}/api/v1/devices")).json())}
+
+    dev = await ids()
+
+    async def nav(hash_, ready):
+        # In-app navigation: no reload, so no blank frame between scenes.
+        await p.evaluate("h => { location.hash = h; }", hash_)
+        await p.wait_for_selector(ready, timeout=120000)
+
+    # 0. dashboard (the recording starts on a blank page; trimmed below)
+    t0 = time.time()
+    await p.goto(f"{BASE}/#/dashboard")
+    await p.reload()
+    await p.wait_for_selector("#btn-theme")
+    await p.evaluate("document.fonts.ready")
+    await p.wait_for_timeout(700)
+    lead_in = time.time() - t0
+    await cap("Netlapse", "Network state, collected, parsed and versioned — self-hosted, no external services")
+    await p.wait_for_timeout(2800)
+
+    # 1. topology, every site (the view needs a fresh load per hash state)
+    await cap("Topology from the LLDP you already collect", "Every link graded: confirmed, one-sided, unverified — sites drawn as their own boxes")
+    await topo_list(False)
+    await s.topo_go(p, "", 3800)
+    await topo_list(True)
+
+    # 2. compare two days ago with now
+    await cap("Compare any two points in time", "A new leaf's uplinks in green, a re-patched leaf in orange, everything untouched faded")
+    await s.topo_go(p, f"site=den1,den2&from={then_iso}", 1200)
+    await p.click('#tp-filters [data-tpf="changed"]')
+    await p.wait_for_timeout(3200)
+
+    # 3. device dialog
+    await cap("Every capture, at the map's time", "Interfaces, neighbors, ARP, MAC table, config — each tab says which capture and when")
+    await s.topo_go(p, "site=den1", 600)
+    await s.open_device(p, "spine1.den1", "neighbors")
+    await p.wait_for_timeout(3400)
+
+    # 4. forwarding matrix
+    await cap("Forwarding: every TOR to every TOR", "Computed from stored route tables — the red column is a subnet hidden by a Reject aggregate")
+    await nav("#/forwarding?site=den1,den2", "#fw-mx td[data-k]")
+    await p.wait_for_timeout(3800)
+
+    # 5. a pair, both directions
+    await p.click('#fw-mx td[data-k="leaf05.den2|leaf03.den1"]')
+    await p.wait_for_selector("#fw-detail .fw-layers")
+    await p.evaluate("document.getElementById('fw-detail').scrollIntoView({block: 'start'})")
+    await p.evaluate("window.scrollBy(0, -70)")
+    await cap("Both directions, hop by hop", "Asymmetric paths called out, with the route each hop used")
+    await p.wait_for_timeout(3800)
+
+    # 6. semantic diff: the NIC swap on leaf03.den1
+    await cap("Semantic diff", "Not just changed lines: the record and field that moved — here a server's NIC was replaced")
+    await nav(f"#/device/{dev['leaf03.den1']}/diff/arp", "text=MAC_ADDRESS")
+    await p.wait_for_timeout(3800)
+
+    # 7. one search
+    await cap("One Search", "One token across inventory and every stored capture")
+    await nav("#/onesearch", "#one-search-input")
+    await p.type("#one-search-input", "198.51.100.1", delay=70)
+    await p.click("#one-search-btn")
+    await p.wait_for_selector("text=Routing table", timeout=30000)
+    await p.wait_for_timeout(300)
+    await cap("One Search", "A transit peer's IP: its BGP config, ARP entry, BGP session and routes, in one view")
+    await p.wait_for_timeout(3600)
+
+    # 8. template lab
+    await cap("Template Lab", "Load any stored capture, sweep the template database, see the parsed records")
+    await nav("#/templates", "#lab-load-snap")
+    await p.click("#lab-load-snap")
+    await p.wait_for_timeout(400)
+    label = [o for o in await p.eval_on_selector_all("#snap-device option", "os => os.map(o => o.textContent)")
+             if o.startswith("leaf21.den1")][0]
+    await p.select_option("#snap-device", label=label)
+    await p.fill("#snap-type", "lldp")
+    await p.click("#snap-load")
+    await p.wait_for_timeout(700)
+    await p.click("#lab-test-db")
+    await p.wait_for_selector("text=juniper_junos_show_lldp_neighbors", timeout=30000)
+    await p.wait_for_timeout(3600)
+
+    await vctx.close()
+    make_gif(await p.video.path(), root / "netlapse_tour.gif", width=1200, start=max(0.0, lead_in - 0.2))
+
+
 async def shoot(args, root: Path, then_iso: str):
     from playwright.async_api import async_playwright
 
@@ -345,6 +472,8 @@ async def shoot(args, root: Path, then_iso: str):
                     out = root / section
                     out.mkdir(parents=True, exist_ok=True)
                     await getattr(s, section)(out, then_iso)
+            if args.only == "tour" or (args.only == "all" and args.gif):
+                await tour(s, root, then_iso)
         finally:
             await ctx.close()
             await browser.close()
@@ -355,7 +484,8 @@ def main():
     ap = argparse.ArgumentParser(description="Regenerate Forwarding and Topology screenshots from the demo lab")
     ap.add_argument("--out", default=str(ROOT / "screenshots"),
                     help="root folder; forwarding/ and topology/ go under it")
-    ap.add_argument("--only", choices=("all", "forwarding", "topology"), default="all")
+    ap.add_argument("--only", choices=("all", "forwarding", "topology", "tour"), default="all",
+                    help="tour: just the feature-tour GIF (screenshots/netlapse_tour.gif)")
     ap.add_argument("--demo-dir", default=None, help="where to build the demo lab (default: a temp dir)")
     ap.add_argument("--chrome", default=None, help="Chrome/Chromium executable (default: Playwright's)")
     ap.add_argument("--fonts-dir", default=None, help="fontsource folder with ibm-plex-sans/ and ibm-plex-mono/")

@@ -223,3 +223,5 @@ NETLAPSE_CONFIG=/tmp/netlapse-demo/config.yaml NETLAPSE_ADMIN_PASSWORD=demo-pass
 ```
 python tools/screenshots.py --only topology --gif
 ```
+
+`--only tour` records the README's feature tour (`screenshots/netlapse_tour.gif`) from the same lab. For it the lab also carries realistic CLI text for ARP, routes, Junos LLDP and BGP, a server NIC replaced on `leaf03.den1` between the two time points, and BGP transit peers on the edges.
